@@ -9,7 +9,7 @@ from .config import ConfigError, load_config
 from .jobs.collect import run_collect
 from .notify_factory import CHANNELS, build_notifier
 from .pipeline.digest import build_digest
-from .pipeline.interactions import format_favorites, handle_action
+from .pipeline.interactions import format_favorites, format_status_table, handle_action
 from .store import repo
 from .store.db import connect, init_db
 
@@ -32,7 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="初始化数据库")
     sub.add_parser("config-check", help="校验配置并输出摘要（不写数据库）")
     sub.add_parser("collect", help="拉取所有启用的来源")
-    sub.add_parser("status", help="查看状态")
+    status = sub.add_parser("status", help="查看状态")
+    status.add_argument(
+        "--format",
+        choices=["json", "table"],
+        default="json",
+        help="输出格式：json（默认）或 table（人读表格）",
+    )
     sub.add_parser("favorites", help="查看收藏夹")
     sub.add_parser("prefs", help="查看偏好设置")
     sub.add_parser("backfill-vectors", help="为已精读文章补算语义向量")
@@ -138,7 +144,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "status":
-        print(json.dumps(repo.stats(conn), ensure_ascii=False, indent=2, default=str))
+        data = repo.stats(conn)
+        if args.format == "table":
+            print(format_status_table(data))
+        else:
+            print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
         return 0
 
     if args.command == "favorites":

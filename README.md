@@ -184,7 +184,7 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 | `digest --kind daily\|weekly` | 生成并投递当期内容（`--preview` 预演） |
 | `run` | `collect` + `digest`，适合 cron |
 | `serve --channel feishu\|webhook\|fake` | 常驻：定时采集、精读 worker、向量回填 |
-| `status` | 文档数、状态分布、最近运行、最近 7 天的源/花费/推送状况 |
+| `status [--format json\|table]` | 文档数、状态分布、最近 7 天的源/花费/推送；`table` 输出人读表格 |
 | `favorites` / `prefs` | 收藏夹 / 偏好设置 |
 | `search <query>` | 全库检索，本地不足时补站外 |
 | `related --document-id N` | 找知识库里的相关文章 |
@@ -278,7 +278,7 @@ src/ai_radar/
 ```bash
 uv sync --dev
 uv run ruff check .
-uv run pytest -q        # 361 项测试
+uv run pytest -q        # 363 项测试
 ```
 
 测试覆盖采集解析、归一化与去重、实体互斥、打分与聚类、回声判定、卡片渲染、渠道重试、

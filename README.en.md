@@ -166,7 +166,7 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 | `digest --kind daily\|weekly` | build and deliver a digest (`--preview` to rehearse) |
 | `run` | `collect` + `digest`, suitable for cron |
 | `serve --channel feishu\|webhook\|fake` | scheduler, deep-read worker, vector backfill |
-| `status` | documents, status distribution, recent runs, last-7-day observability |
+| `status [--format json\|table]` | documents, status distribution, last-7-day sources / cost / deliveries; `table` for a human-readable view |
 | `favorites` / `prefs` | favorites / preferences |
 | `search <query>` | search the whole library, fall back to the web |
 | `related --document-id N` | related articles in the knowledge base |
@@ -264,7 +264,7 @@ src/ai_radar/
 ```bash
 uv sync --dev
 uv run ruff check .
-uv run pytest -q        # 361 tests
+uv run pytest -q        # 363 tests
 ```
 
 Tests cover collector parsing, normalization and dedupe, entity conflicts, scoring and

@@ -95,6 +95,10 @@ def test_parser_defaults() -> None:
     assert args.channel == "fake"
     assert args.preview is False
 
+    status = build_parser().parse_args(["status"])
+    assert status.format == "json"
+    assert build_parser().parse_args(["status", "--format", "table"]).format == "table"
+
     search = build_parser().parse_args(["search", "关键词"])
     assert search.limit == 5
     assert search.no_external is False
@@ -224,6 +228,43 @@ def test_status_reports_recent_window(root: Path, capsys) -> None:
     assert window["llm_calls"] == 1
     assert window["llm_total_cny"] == 0.02
     assert window["failed_runs"][0]["error"] == "timeout"
+
+
+def test_status_table_format(root: Path, capsys) -> None:
+    assert main(["--root", str(root), "status", "--format", "table"]) == 0
+    out = capsys.readouterr().out
+    assert "== 文档状态 ==" in out
+    assert "最近 7 天 · 信源" in out
+    assert "合计：" in out
+
+
+def test_status_table_marks_stale_source() -> None:
+    from ai_radar.pipeline.interactions import format_status_table
+
+    stats = {
+        "documents_by_status": {},
+        "today_digest": None,
+        "today_llm": {},
+        "last_7_days": {
+            "window_days": 7,
+            "llm_calls": 0,
+            "llm_total_cny": 0,
+            "sources": [
+                {
+                    "source_id": "arxiv",
+                    "name": "arXiv",
+                    "kind": "arxiv",
+                    "enabled": True,
+                    "last_fetched_at": "2026-01-01T00:00:00+00:00",
+                    "items_in_window": 0,
+                }
+            ],
+            "llm_by_stage": [],
+            "digests": [],
+            "failed_runs": [],
+        },
+    }
+    assert "停滞" in format_status_table(stats)
 
 
 def test_test_push_with_fake_channel(root: Path, capsys) -> None:

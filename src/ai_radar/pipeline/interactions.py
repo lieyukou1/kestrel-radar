@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import unicodedata
 
 from ..store import repo
+from ..util import parse_iso, utcnow
 
 DISLIKE_REASONS = [
     "维度不相关",
@@ -68,6 +70,157 @@ def format_favorites(conn: sqlite3.Connection, *, limit: int = 20) -> str:
 
 def format_status(conn: sqlite3.Connection) -> str:
     return json.dumps(repo.stats(conn), ensure_ascii=False, indent=2, default=str)
+
+
+def _display_width(text: str) -> int:
+    """中文按两列宽算，否则表格会错位。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def _table(headers: list[str], rows: list[list[str]]) -> str:
+    widths = [_display_width(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], _display_width(cell))
+
+    def render(cells: list[str]) -> str:
+        padded = [
+            cell + " " * (widths[index] - _display_width(cell))
+            for index, cell in enumerate(cells)
+        ]
+        return "  ".join(padded).rstrip()
+
+    lines = [render(headers), "  ".join("-" * width for width in widths)]
+    lines.extend(render([str(cell) for cell in row]) for row in rows)
+    return "\n".join(lines)
+
+
+def _short_time(value: str | None) -> str:
+    at = parse_iso(value)
+    return at.strftime("%m-%d %H:%M") if at else "—"
+
+
+def _source_state(last_fetched_at: str | None, enabled: bool, now) -> str:
+    if not enabled:
+        return "已停用"
+    at = parse_iso(last_fetched_at)
+    if at is None:
+        return "未采集"
+    hours = (now - at).total_seconds() / 3600
+    if hours >= 48:
+        return "停滞"
+    if hours >= 24:
+        return "偏慢"
+    return "正常"
+
+
+def _truncate(text: str, width: int = 48) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def format_status_table(stats: dict) -> str:
+    """把 stats 渲染成给人看的表格；空库也要能正常输出。"""
+    now = utcnow()
+    lines: list[str] = []
+
+    lines.append("== 文档状态 ==")
+    by_status = stats.get("documents_by_status") or {}
+    rows = [[str(key), str(value)] for key, value in sorted(by_status.items())]
+    lines.append(_table(["状态", "数量"], rows or [["（空）", "0"]]))
+
+    lines.append("")
+    lines.append("== 今日 ==")
+    digest = stats.get("today_digest") or {}
+    if digest:
+        lines.append(
+            f"推送：{digest.get('kind', '-')} · {digest.get('status', '-')} · "
+            f"{_json(digest.get('stats_json')).get('count', '-')} 条"
+        )
+    else:
+        lines.append("推送：今天还没有 digest")
+    today_llm = stats.get("today_llm") or {}
+    lines.append(
+        f"模型：{today_llm.get('calls', 0)} 次调用，"
+        f"¥{float(today_llm.get('cost_cny') or 0):.4f}"
+    )
+
+    window = stats.get("last_7_days") or {}
+    days = window.get("window_days", 7)
+    lines.append("")
+    lines.append(f"== 最近 {days} 天 · 信源 ==")
+    sources = window.get("sources") or []
+    source_rows = [
+        [
+            str(item.get("source_id", "")),
+            _truncate(item.get("name", ""), 16),
+            str(item.get("kind", "")),
+            str(item.get("items_in_window", 0)),
+            _short_time(item.get("last_fetched_at")),
+            _source_state(item.get("last_fetched_at"), item.get("enabled", True), now),
+        ]
+        for item in sources
+    ]
+    lines.append(
+        _table(
+            ["source_id", "名称", "kind", "7日新增", "最近采集(UTC)", "状态"],
+            source_rows or [["（空）", "", "", "0", "—", "未采集"]],
+        )
+    )
+
+    lines.append("")
+    lines.append(f"== 最近 {days} 天 · 模型 ==")
+    stages = window.get("llm_by_stage") or []
+    stage_rows = [
+        [
+            str(item.get("stage", "")),
+            str(item.get("calls", 0)),
+            f"¥{float(item.get('cost_cny') or 0):.4f}",
+        ]
+        for item in stages
+    ]
+    lines.append(_table(["stage", "调用", "花费"], stage_rows or [["（无）", "0", "¥0.0000"]]))
+    lines.append(
+        f"合计：{window.get('llm_calls', 0)} 次，"
+        f"¥{float(window.get('llm_total_cny') or 0):.4f}"
+    )
+
+    lines.append("")
+    lines.append(f"== 最近 {days} 天 · 推送 ==")
+    digests = window.get("digests") or []
+    digest_rows = [
+        [
+            str(item.get("date", "")),
+            str(item.get("kind", "")),
+            str(item.get("status", "")),
+            str(item.get("count") if item.get("count") is not None else "-"),
+        ]
+        for item in digests
+    ]
+    lines.append(_table(["日期", "类型", "状态", "条数"], digest_rows or [["（无）", "", "", "-"]]))
+
+    lines.append("")
+    lines.append(f"== 最近 {days} 天 · 失败任务 ==")
+    failures = window.get("failed_runs") or []
+    failure_rows = [
+        [
+            str(item.get("job", "")),
+            _short_time(item.get("started_at")),
+            _truncate(item.get("error", "")),
+        ]
+        for item in failures
+    ]
+    lines.append(_table(["job", "开始(UTC)", "错误"], failure_rows or [["（无）", "—", ""]]))
+
+    return "\n".join(lines)
+
+
+def _json(value) -> dict:
+    try:
+        data = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def handle_action(conn: sqlite3.Connection, value: dict) -> dict:
