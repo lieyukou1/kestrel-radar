@@ -1,0 +1,20 @@
+# 模型与单价（M1 仅预留，尚未接入 LLM）
+models:
+  default: deepseek-flash
+  stages:
+    tag: deepseek-flash
+    summary: deepseek-flash
+    deep_read: deepseek-flash
+    l3: deepseek-flash
+
+# 单价按每百万 token 计，单位：元。
+# 注意：以下为保守估算，正式使用前请按 DeepSeek 官网价格校准。
+pricing_cny_per_million:
+  deepseek-flash:
+    input: 1.0
+    output: 4.0
+
+budget:
+  daily_cny: 5.0
+  pause_deep_read_at: 0.8
+  stop_at: 1.0

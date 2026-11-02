@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.12345v2</id>
+    <published>2026-10-19T08:00:00Z</published>
+    <title>A Mixture of Experts Architecture for Efficient Language Models</title>
+    <summary>We propose a sparse mixture of experts transformer architecture for efficient language models.</summary>
+    <author><name>Alice</name></author>
+    <author><name>Bob</name></author>
+    <link href="http://arxiv.org/abs/2401.12345v2" rel="alternate" type="text/html"/>
+    <category term="cs.LG"/>
+    <category term="cs.AI"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2409.54321v1</id>
+    <published>2026-10-21T08:00:00Z</published>
+    <title>A Benchmark for Multimodal Agent Evaluation</title>
+    <summary>We introduce a benchmark and dataset for evaluating multimodal agents.</summary>
+    <author><name>Carol</name></author>
+    <link href="http://arxiv.org/abs/2409.54321v1" rel="alternate" type="text/html"/>
+    <category term="cs.CL"/>
+    <category term="cs.CV"/>
+  </entry>
+</feed>

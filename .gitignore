@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+# 本地私有信源（个人订阅的公众号等），与 sources.yaml 合并后生效
+config/sources.local.yaml
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.bak-*

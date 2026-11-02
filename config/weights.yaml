@@ -1,0 +1,94 @@
+authority:
+  S: 1.0
+  A: 0.8
+  B: 0.55
+  C: 0.3
+
+scoring:
+  authority: 0.30
+  heat: 0.30
+  recency: 0.15
+  novelty: 0.15
+  preference: 0.10
+
+# 热度 = 静态信号 + 动态增速（多次快照之间的变化）
+heat:
+  base_weight: 0.65
+  momentum_weight: 0.35
+  # 每个类型「一天涨多少」算满分动量：repo 用对数增速，0.2 ≈ 每天涨 22%
+  targets_per_day:
+    repo: 0.2
+    forum: 1.0
+    paper: 0.3
+
+# GitHub 双层校验：星数达标 + 多次观测下的增速达标
+repo_gate:
+  min_stars: 200
+  min_observations: 3
+  # 采集间隔 55 分钟，3 次快照实际跨度约 1.8 小时，门槛取 1.5 小时
+  min_span_hours: 1.5
+  min_stars_per_day: 20
+  min_pct_per_day: 1.0
+
+# 各内容类型的时效半衰期（小时）
+half_life_hours:
+  paper: 96
+  forum: 36
+  blog: 48
+  repo: 72
+
+# 成熟窗口：发布后至少经过多久才允许推送
+maturity_hours:
+  paper: 48
+  forum: 24
+  blog: 12
+  repo: 24
+
+# 节奏：周一发周报（论文 + 仓库），周二到周五发日报，周末不推
+cadence:
+  daily_size: 5
+  # 日报里主线话题最多占几席，剩下的给快讯
+  daily_theme_items: 3
+  weekly_papers: 3
+  weekly_repos: 2
+
+# 话题聚合：选择单位从「单篇」改成「话题」
+topics:
+  # 只对分数最高的一批候选做聚类，控制向量计算量
+  # 120 在热门日子容易卡在临界点（差几条就聚不出主线），放到 180 提召回
+  pool: 180
+  # 同一话题至少 2 条内容，否则宁可判定「今日无主线」
+  min_members: 2
+  similarity: 0.82
+  # 只共享一个实体时，还要语义相似度达到这个值才合并；
+  # 否则「都提到同一个词（如会议名）」会被当成同一件事
+  entity_similarity: 0.55
+  # 出现在超过 12 条候选里的实体太泛（如公司名天天出现），不作为话题键
+  max_docs: 12
+
+# 爆款插队：老热点之外，达到阈值的内容可以插进当天日报
+blockbuster:
+  hn_points: 300
+  hf_upvotes: 120
+  repo_stars_per_day: 500
+
+selection:
+  # 同维度最多 3 条，避免一天全是一个方向
+  max_per_tag: 3
+  mmr_lambda: 0.7
+  novelty_days: 30
+
+# 维度轮转：用曝光赤字让「今天讲哪个方向」转起来，互动只做微调
+rotation:
+  enabled: true
+  # 条目窗口：最近多少条推送参与赤字计算
+  item_window: 30
+  # 主线窗口：最近多少次日报参与主线轮转
+  theme_window: 10
+  # 只在头名 85% 分带内换主线，避免为补维度推冷门
+  theme_band: 0.85
+  # 乘子封顶 ±20%，赤字只能改变同分条目的先后
+  max_adjust: 0.2
+  # 冷启动：先记录这么多次日报，期间乘子恒为 1.0
+  learning_days: 14
+

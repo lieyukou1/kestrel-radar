@@ -1,0 +1,186 @@
+network:
+  # 默认直连；需要代理时用 .env 的 AI_RADAR_PROXY 覆盖（例如 http://127.0.0.1:7897），
+  # 不要把个人代理地址写进仓库。
+  proxy: ""
+  mode: overseas-only
+  timeout_seconds: 60
+
+sources:
+  - id: arxiv
+    kind: arxiv
+    name: arXiv
+    authority: A
+    region: overseas
+    enabled: true
+    max_results: 50
+    categories:
+      - cs.AI
+      - cs.LG
+      - cs.CL
+      - cs.CV
+
+  - id: hackernews
+    kind: hackernews
+    name: Hacker News
+    authority: A
+    region: overseas
+    enabled: true
+    max_results: 50
+    query: "AI"
+
+  - id: hf_daily
+    kind: hf_daily
+    name: Hugging Face Daily Papers
+    authority: A
+    region: overseas
+    enabled: true
+    max_results: 50
+
+  - id: github
+    kind: github
+    name: GitHub Trending (Search)
+    authority: B
+    region: overseas
+    enabled: true
+    max_results: 20
+    query: "topic:llm stars:>=200"
+    created_days: 90
+    min_stars: 200
+
+  - id: rss
+    kind: rss
+    name: 中文技术媒体
+    # 中文内容优先：与 arXiv / HN 同为 A 级，避免权威分天然落后 0.075 而被长期挤出
+    authority: A
+    region: domestic
+    enabled: true
+    # 每个 feed 各自取这么多条（不再是所有 feed 共享一个上限）
+    max_results: 15
+    # 公众号 feed 会带回几个月前的历史文章，超过 10 天的直接丢掉
+    max_age_days: 10
+    feeds:
+      - id: qbitai
+        name: 量子位
+        url: https://www.qbitai.com/feed
+        authority: A
+      # 下面的关键词锚点在 infoq-cn 上定义，其余 feed 复用（YAML 锚点必须先定义后引用）
+      - id: infoq-cn
+        name: InfoQ 中文
+        url: https://www.infoq.cn/feed
+        authority: A
+        # InfoQ 把北京时间标成 GMT，回拨 8 小时还原成 UTC
+        published_tz_offset_hours: 8
+        # InfoQ 也发 Java / 数据库等通用开发新闻，同样按标题筛 AI；
+        # 「A；B；C」式的聚合早报信息密度低，整条丢弃。
+        exclude_keywords: &exclude_roundup
+          - "；"
+        keywords: &ai_keywords
+          - AI
+          - 人工智能
+          - 大模型
+          - 模型
+          - 智能体
+          - Agent
+          - 多模态
+          - 推理
+          - 训练
+          - 微调
+          - 开源
+          - 算力
+          - 芯片
+          - GPU
+          - 机器人
+          - 具身
+          - 生成式
+          - 语音
+          - 视觉
+          - 评测
+          - 数据集
+          - RAG
+          - LLM
+          - AIGC
+          - DeepSeek
+          - ChatGPT
+          - Qwen
+          - 通义
+          - 豆包
+          - 文心
+          - Kimi
+          - 智谱
+          - Copilot
+      - id: geekpark
+        name: 极客公园
+        url: https://www.geekpark.net/rss
+        authority: B
+        exclude_keywords: *exclude_roundup
+        keywords: *ai_keywords
+      - id: leiphone
+        name: 雷锋网
+        url: https://www.leiphone.com/feed
+        authority: B
+        exclude_keywords: *exclude_roundup
+        keywords: *ai_keywords
+      - id: juejin
+        name: 掘金
+        url: https://juejin.cn/rss
+        authority: B
+        exclude_keywords: *exclude_roundup
+        keywords: *ai_keywords
+      # 公众号源（机器之心、新智元等，需经 wechat2rss 之类转码）不写进仓库：
+      # 在 config/sources.local.yaml 里按同样的 feed 结构追加，加载时会自动合并。
+      # 个人博客：不走公众号，原生 RSS
+      - id: kexue-fm
+        name: 科学空间（苏剑林）
+        url: https://kexue.fm/feed
+        authority: A
+
+  # 官方博客：一手信息源，避免「二手转述替官方说话」。
+  # 独立成源而不是并进上面的 rss：上面是 domestic（直连）+ 中文关键词 + 10 天窗口，
+  # 这组需要走代理、7 天窗口，过滤口径也不同。
+  - id: official_blogs
+    kind: rss
+    name: 官方博客
+    authority: A
+    region: overseas
+    enabled: true
+    max_results: 10
+    max_age_days: 7
+    feeds:
+      - id: openai-news
+        name: OpenAI
+        url: https://openai.com/news/rss.xml
+        authority: A
+      - id: deepmind-blog
+        name: Google DeepMind
+        url: https://deepmind.google/blog/rss.xml
+        authority: A
+      - id: nvidia-blog
+        name: NVIDIA Blog
+        # 综合博客，含游戏/汽车等非 AI 内容，按标题筛一遍
+        url: https://blogs.nvidia.com/feed/
+        authority: B
+        keywords: *ai_keywords
+      - id: apple-ml
+        name: Apple Machine Learning
+        url: https://machinelearning.apple.com/rss.xml
+        authority: A
+      - id: hf-blog
+        name: Hugging Face Blog
+        url: https://huggingface.co/blog/feed.xml
+        authority: A
+
+  # 社区讨论：Reddit 现在要 OAuth 才能读，本机直连/代理都被 403/429；
+  # Lobsters 同样有投票和评论，接口可直连（走代理），用作社区信号。
+  - id: lobsters
+    kind: lobsters
+    name: Lobsters
+    authority: B
+    region: overseas
+    enabled: true
+    max_results: 30
+    min_score: 3
+    # 论坛类内容有 24 小时成熟窗口，抓 48 小时内的帖子才不会「刚成熟就过期」
+    max_age_hours: 48
+    tags:
+      - ai
+      - ml
