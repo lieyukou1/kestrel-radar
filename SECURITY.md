@@ -26,5 +26,13 @@ SQLite 数据库（`data/ai_radar.db`），没有遥测、没有上传。
 
 ## 报告问题
 
-如果发现安全问题，请开一个 Issue（不要贴凭据、open_id 或完整日志），
-或用仓库主页提供的联系方式私信。确认后会尽快修复并在 README 里致谢。
+安全漏洞请走 GitHub 私密漏洞报告，不要开公开 Issue：
+
+1. 打开仓库的 **Security** 页；
+2. 点击 **Report a vulnerability**（Advisories → New draft security advisory）；
+3. 写清问题、复现步骤、影响范围，必要时附最小复现。
+
+报告只有维护者可见，确认后会尽快修复，并在修复说明里致谢（如果你愿意署名）。
+
+普通 bug、功能建议、使用问题走公开 Issue 即可。任何渠道都请不要贴凭据、`open_id`、
+完整日志或可直接利用的细节。
