@@ -16,8 +16,7 @@ import os
 import re
 import socket
 import sqlite3
-from dataclasses import dataclass, asdict
-from pathlib import Path
+from dataclasses import asdict, dataclass
 from urllib.parse import urlparse
 
 import feedparser
@@ -25,7 +24,7 @@ import httpx
 import trafilatura
 from readability import Document
 
-from ai_radar.config import load_config, PROJECT_ROOT
+from ai_radar.config import PROJECT_ROOT, load_config
 from ai_radar.store.db import connect
 
 OUT_DIR = PROJECT_ROOT / "data" / "cleaning-eval"
@@ -260,8 +259,8 @@ def main() -> int:
             folder.mkdir(parents=True, exist_ok=True)
 
             for tool, runner in (
-                ("trafilatura", lambda: run_trafilatura(raw_html, sample.url)),
-                ("readability", lambda: run_readability(raw_html)),
+                ("trafilatura", lambda raw=raw_html, url=sample.url: run_trafilatura(raw, url)),
+                ("readability", lambda raw=raw_html: run_readability(raw)),
             ):
                 result = Result(sample.category, index, tool, sample.url, ok=True)
                 try:

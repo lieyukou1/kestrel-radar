@@ -4,9 +4,9 @@ from datetime import timedelta
 
 import httpx
 
+from ...util import utcnow
 from ..http import get_with_retry
 from .base import RawItem
-from ...util import utcnow
 
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
 

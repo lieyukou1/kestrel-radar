@@ -15,7 +15,7 @@ from ..config import AppConfig
 from ..llm.client import BudgetExceeded, DeepSeekLLM, LLMError
 from ..store import repo
 from ..util import iso, parse_iso, utcnow
-from . import composer, discussion, entities, rank, rotation, signals, topics
+from . import composer, discussion, entities, rank, recall, rotation, signals, topics
 from .cleaning import clean_html
 from .preferences import paused_dimensions, paused_sources
 
@@ -686,24 +686,6 @@ def build_digest(
             )
 
     entries = composition.items
-    if not entries:
-        location = _deliver(
-            conn,
-            notifier,
-            digest_id,
-            date,
-            [],
-            kind=kind,
-            theme_label=theme_label,
-            theme_reason=theme_reason,
-            theme_query=theme_query,
-            theme_when=theme_when,
-            theme_when_note=theme_when_note,
-            preview=preview,
-        )
-        repo.mark_digest_sent(conn, digest_id, {"count": 0, "kind": kind, "outbox": location})
-        return {"date": date, "status": "sent", "count": 0, "kind": kind, "outbox": location}
-
     items: list[DigestItemView] = []
     summaries = 0
     summary_errors: list[str] = []
@@ -764,6 +746,61 @@ def build_digest(
                 )
             )
 
+    # 反刍：日报末尾补一条「值得回看」。预览与失败不写 interactions，
+    # 否则会污染「60 天间隔 / 累计 2 次」的状态。
+    recall_candidate = None
+    if kind == "daily" and not preview:
+        candidate = recall.pick_recall(conn, now)
+        current_ids = {item.document_id for item in items}
+        if candidate is not None and candidate.document_id not in current_ids:
+            document = repo.get_document(conn, candidate.document_id)
+            if document is not None:
+                recall_candidate = candidate
+                index += 1
+                repo.add_digest_item(
+                    conn,
+                    digest_id=digest_id,
+                    document_id=candidate.document_id,
+                    rank=index,
+                    score=0.0,
+                    reason="值得回看",
+                    summary={"recall": candidate.reason},
+                    section="recall",
+                )
+                items.append(
+                    DigestItemView(
+                        rank=index,
+                        document_id=candidate.document_id,
+                        title=candidate.title,
+                        url=candidate.url,
+                        tag=candidate.primary_tag or "",
+                        source=str(document["kind"]),
+                        reason="值得回看",
+                        score=0.0,
+                        section="recall",
+                        note=candidate.reason,
+                        published_at=document["published_at"],
+                    )
+                )
+
+    if not items:
+        location = _deliver(
+            conn,
+            notifier,
+            digest_id,
+            date,
+            [],
+            kind=kind,
+            theme_label=theme_label,
+            theme_reason=theme_reason,
+            theme_query=theme_query,
+            theme_when=theme_when,
+            theme_when_note=theme_when_note,
+            preview=preview,
+        )
+        repo.mark_digest_sent(conn, digest_id, {"count": 0, "kind": kind, "outbox": location})
+        return {"date": date, "status": "sent", "count": 0, "kind": kind, "outbox": location}
+
     location = _deliver(
         conn,
         notifier,
@@ -794,8 +831,18 @@ def build_digest(
             "candidates": len(scored),
             "summaries": summaries,
             "summary_errors": summary_errors,
+            "recall": None if recall_candidate is None else recall_candidate.document_id,
         },
     )
+    # 只有真正投递成功才记一次「回看」，保证 60 天间隔与两次上限可信。
+    if recall_candidate is not None:
+        repo.add_interaction(
+            conn,
+            document_id=recall_candidate.document_id,
+            digest_id=digest_id,
+            action="recall",
+            reason=recall_candidate.reason,
+        )
     return {
         "date": date,
         "status": "sent",

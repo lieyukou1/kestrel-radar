@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 from .cards import (
-    KIND_LABEL,
     KB_PAGE_SIZE,
     KB_WINDOWS,
+    KIND_LABEL,
     build_compare_card,
     build_detail_card,
     build_digest_card,

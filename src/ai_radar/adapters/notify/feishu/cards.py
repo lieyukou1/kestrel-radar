@@ -9,7 +9,6 @@ from ..base import (
     published_label,
 )
 
-
 # 卡片上展示的是中文，内部 kind 保持英文不变。
 KIND_LABEL = {
     "paper": "论文",
@@ -149,6 +148,8 @@ def build_digest_card(
                 f"{meta_line(kind_label(item.source), dimension_name(item.tag), published_label(item.published_at, item.source, reference), item.reason)}"
                 f"</font>"
             )
+            if item.note:
+                content += f"\n<font color='grey'>{_escape_md(item.note)}</font>"
             if item.discussion_url:
                 label = item.discussion_label or discussion_label_for(item.discussion_url)
                 content += f"\n[社区讨论（{label}）]({item.discussion_url})"

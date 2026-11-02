@@ -4,10 +4,12 @@ from datetime import timedelta
 from email.utils import format_datetime
 from pathlib import Path
 
+import pytest
+
 from ai_radar.adapters.sources.github import GitHubAdapter
 from ai_radar.adapters.sources.lobsters import LobstersAdapter, parse_comments
 from ai_radar.adapters.sources.rss import RSSAdapter, match_keywords
-from ai_radar.config import PROJECT_ROOT, load_config
+from ai_radar.config import PROJECT_ROOT, ConfigError, load_config
 from ai_radar.util import utcnow
 
 
@@ -156,6 +158,46 @@ def test_local_sources_overlay_merges_feeds(tmp_path: Path, monkeypatch) -> None
     source = config.sources[0]
     assert source.options["max_results"] == 3
     assert [feed["id"] for feed in source.options["feeds"]] == ["a", "b"]
+
+
+def write_config(root: Path, sources_text: str) -> None:
+    config_dir = root / "config"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "sources.yaml").write_text(sources_text, encoding="utf-8")
+    (config_dir / "weights.yaml").write_text("{}\n", encoding="utf-8")
+    (config_dir / "models.yaml").write_text("{}\n", encoding="utf-8")
+
+
+def test_config_rejects_duplicate_and_invalid_sources(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("AI_RADAR_PROXY", raising=False)
+    write_config(
+        tmp_path,
+        "sources:\n"
+        "  - id: rss\n"
+        "    kind: rss\n"
+        "    authority: Z\n"
+        "    feeds:\n"
+        "      - id: a\n"
+        "        url: ftp://example.com/a\n"
+        "  - id: rss\n"
+        "    kind: nope\n",
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(tmp_path)
+    message = str(excinfo.value)
+    assert "id 重复" in message
+    assert "kind='nope' 不支持" in message
+    assert "authority='Z'" in message
+    assert "url 必须是 http(s)" in message
+
+
+def test_config_rejects_empty_rss_feeds(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("AI_RADAR_PROXY", raising=False)
+    write_config(tmp_path, "sources:\n  - id: rss\n    kind: rss\n")
+
+    with pytest.raises(ConfigError, match="必须配置非空 feeds"):
+        load_config(tmp_path)
 
 
 def lobsters_story(

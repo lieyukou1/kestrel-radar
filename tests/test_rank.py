@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ai_radar.pipeline.rank import novelty_score, recency_score
 
@@ -21,7 +21,7 @@ def document(kind: str, title: str, published: datetime) -> dict:
 
 
 def test_recency_decays_with_age() -> None:
-    now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 21, 12, tzinfo=UTC)
     fresh = document("forum", "fresh", now - timedelta(hours=1))
     old = document("forum", "old", now - timedelta(hours=72))
     assert recency_score(fresh, WEIGHTS, now) > recency_score(old, WEIGHTS, now)
@@ -33,7 +33,7 @@ def test_novelty_penalizes_duplicate_title() -> None:
 
 
 def test_repo_recency_uses_first_seen_not_created_at() -> None:
-    now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 21, 12, tzinfo=UTC)
     repo_doc = {
         "kind": "repo",
         "published_at": (now - timedelta(days=100)).isoformat(),

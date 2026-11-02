@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import feedparser
 import httpx
 
+from ...util import utcnow
 from ..http import get_with_retry
 from .base import RawItem
-from ...util import utcnow
 
 TAG_RE = re.compile(r"<[^>]+>")
 
@@ -95,7 +95,7 @@ class RSSAdapter:
             published_at = None
             if entry.get("published_parsed"):
                 published = datetime(
-                    *entry.published_parsed[:6], tzinfo=timezone.utc
+                    *entry.published_parsed[:6], tzinfo=UTC
                 ) - timedelta(hours=tz_offset)
                 # 时间戳落在未来会让成熟窗口永远不满足，兜底按当前时间算。
                 if published > now:

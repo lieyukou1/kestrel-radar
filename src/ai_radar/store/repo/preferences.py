@@ -7,7 +7,6 @@ from datetime import timedelta
 from ...util import iso, parse_iso, utcnow
 from ._common import _dumps
 
-
 THEME_KEY = "theme:active"
 MIN_WEIGHT = 0.1
 DEFAULT_HALF_LIFE_DAYS = 7.0

@@ -6,7 +6,6 @@ from datetime import datetime
 
 from rapidfuzz import fuzz
 
-from ..store import repo
 from ..util import parse_iso
 
 

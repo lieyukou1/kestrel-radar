@@ -4,8 +4,8 @@ from pathlib import Path
 
 from ai_radar.adapters.notify.feishu import build_digest_card, build_topic_card
 from ai_radar.config import AppConfig, load_config
-from ai_radar.pipeline.interactions import handle_action
 from ai_radar.pipeline import search as search_mod
+from ai_radar.pipeline.interactions import handle_action
 from ai_radar.pipeline.search import (
     ExternalHit,
     SearchHit,

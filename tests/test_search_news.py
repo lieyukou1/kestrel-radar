@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from ai_radar.adapters import search_news as search_news_mod
-
 
 RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">

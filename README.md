@@ -3,6 +3,8 @@
 > **A radar that remembers what it already told you.**
 > 会记住自己说过什么的 AI 情报雷达。
 
+[中文](README.md) · [English](README.en.md)
+
 [![tests](https://github.com/lieyukou1/kestrel-radar/actions/workflows/test.yml/badge.svg)](https://github.com/lieyukou1/kestrel-radar/actions/workflows/test.yml)
 [![python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
@@ -104,6 +106,8 @@ Kestrel Radar 围绕这三点做的：**去重不是字符串匹配，是实体�
 
 精读完成才入库。入库后可以：找相关文章、两篇横向对比、围绕某话题继续检索、
 让模型基于知识库回答问题（没有依据时会明确说「没有依据」，不会硬编）。
+收藏或精读过满 30 天的内容会进入回看候选，在日报末尾以「值得回看」出现一次
+（同一条间隔 ≥60 天、累计最多 2 次）。
 
 ### 7. 反馈闭环与维度轮转
 
@@ -113,26 +117,9 @@ Kestrel Radar 围绕这三点做的：**去重不是字符串匹配，是实体�
 
 ## 一张卡片长什么样
 
-> 结构示意，非真实内容。
+![Kestrel Radar 日报卡片示意](assets/card.svg)
 
-```text
-Kestrel Radar · 2026-11-02 周一
-────────────────────────────────
-今日主线  推理框架的「显存墙」被绕开了
-          三条不同来源的证据指向同一件事：KV cache 压缩进入工程化阶段
-
-1. [论文]  xxx: 面向长上下文的稀疏 KV 缓存          arXiv · 引用 12
-    一句话说明为什么值得看……
-    [详情] [精读] [收藏] [不感兴趣]
-
-2. [讨论]  我们把 128K 上下文的显存砍了一半          HN 182 分 / 46 评论
-    社区怎么看：3 条观点摘要……
-
-快讯
-3. [媒体]  ……
-────────────────────────────────
-收藏夹 · 知识库 · 状态
-```
+> 结构与真实推送一致，标题为示例，非真实内容。
 
 ## 和别的方案比
 
@@ -192,11 +179,12 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 | 命令 | 作用 |
 |---|---|
 | `init` | 初始化数据库（建表、写 meta） |
+| `config-check` | 校验配置并输出摘要（不写数据库） |
 | `collect` | 拉取所有启用来源 |
 | `digest --kind daily\|weekly` | 生成并投递当期内容（`--preview` 预演） |
 | `run` | `collect` + `digest`，适合 cron |
 | `serve --channel feishu\|webhook\|fake` | 常驻：定时采集、精读 worker、向量回填 |
-| `status` | 文档数、状态分布、最近运行 |
+| `status` | 文档数、状态分布、最近运行、最近 7 天的源/花费/推送状况 |
 | `favorites` / `prefs` | 收藏夹 / 偏好设置 |
 | `search <query>` | 全库检索，本地不足时补站外 |
 | `related --document-id N` | 找知识库里的相关文章 |
@@ -279,8 +267,6 @@ src/ai_radar/
 
 ## Roadmap
 
-- [ ] 反刍推送：`pipeline/recall.py` 的候选逻辑已就绪，接进日报末尾（避免与当期内容撞车）
-- [ ] 英文 README 与关键文档，方便非中文用户
 - [ ] Telegram / 邮件渠道（`Notifier` 已解耦，只差实现）
 - [ ] MCP server：让 Claude / Cursor 直接读取你的本地情报库
 - [ ] 实体识别换成小模型，替代当前的正则 + 词表
@@ -291,8 +277,8 @@ src/ai_radar/
 
 ```bash
 uv sync --dev
-uv run pytest -q        # 353 项测试
 uv run ruff check .
+uv run pytest -q        # 361 项测试
 ```
 
 测试覆盖采集解析、归一化与去重、实体互斥、打分与聚类、回声判定、卡片渲染、渠道重试、

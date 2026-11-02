@@ -12,6 +12,7 @@ from ai_radar.adapters.notify.webhook import WebhookNotifier
 from ai_radar.config import load_config
 from ai_radar.store import repo
 from ai_radar.store.db import connect, init_db
+from ai_radar.util import utcnow
 
 ENV_KEYS = (
     "FEISHU_APP_ID",
@@ -66,6 +67,7 @@ def test_parser_builds_every_subcommand() -> None:
     parser = build_parser()
     cases = {
         "init": [],
+        "config-check": [],
         "collect": [],
         "status": [],
         "favorites": [],
@@ -99,6 +101,13 @@ def test_parser_defaults() -> None:
 
     deep_read = build_parser().parse_args(["deep-read"])
     assert deep_read.limit == 1
+
+
+def test_version_flag(capsys) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        build_parser().parse_args(["--version"])
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out.strip() == "kestrel-radar 0.1.0"
 
 
 def test_parser_rejects_missing_or_invalid_arguments() -> None:
@@ -142,15 +151,79 @@ def test_init_creates_database(root: Path, capsys) -> None:
     assert Path(payload["db"]).exists()
 
 
+def test_config_check_reports_summary(root: Path, capsys) -> None:
+    assert main(["--root", str(root), "config-check"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["sources"] == 0
+    assert payload["feeds"] == 0
+
+
+def test_config_check_reports_errors(root: Path, capsys) -> None:
+    (root / "config" / "sources.yaml").write_text(
+        "sources:\n  - id: broken\n    kind: nope\n", encoding="utf-8"
+    )
+    assert main(["--root", str(root), "config-check"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert "kind='nope'" in payload["error"]
+
+
 def test_readonly_commands_smoke(root: Path, capsys) -> None:
     assert main(["--root", str(root), "status"]) == 0
-    assert "documents_by_status" in capsys.readouterr().out
+    payload = json.loads(capsys.readouterr().out)
+    assert "documents_by_status" in payload
+    assert payload["last_7_days"]["window_days"] == 7
 
     assert main(["--root", str(root), "favorites"]) == 0
     assert "收藏夹为空" in capsys.readouterr().out
 
     assert main(["--root", str(root), "prefs"]) == 0
     assert "偏好设置" in capsys.readouterr().out
+
+
+def test_status_reports_recent_window(root: Path, capsys) -> None:
+    conn = connect(root / "data" / "ai_radar.db")
+    init_db(conn)
+    repo.upsert_source(
+        conn,
+        source_id="arxiv",
+        kind="arxiv",
+        name="arXiv",
+        authority="A",
+        region="overseas",
+        config={},
+    )
+    repo.insert_raw_item(
+        conn,
+        source_id="arxiv",
+        external_id="2401.00001",
+        url="https://arxiv.org/abs/2401.00001",
+        title="A paper",
+        author=None,
+        published_at=None,
+        payload={},
+    )
+    run_id = repo.start_run(conn, "collect")
+    repo.finish_run(conn, run_id, status="failed", error="timeout")
+    repo.record_llm_usage(
+        conn,
+        day=utcnow().date().isoformat(),
+        stage="summary",
+        model="deepseek-flash",
+        input_tokens=100,
+        output_tokens=20,
+        cost_cny=0.02,
+    )
+    conn.close()
+
+    assert main(["--root", str(root), "status"]) == 0
+    window = json.loads(capsys.readouterr().out)["last_7_days"]
+    assert window["sources"][0]["source_id"] == "arxiv"
+    assert window["sources"][0]["items_in_window"] == 1
+    assert window["llm_calls"] == 1
+    assert window["llm_total_cny"] == 0.02
+    assert window["failed_runs"][0]["error"] == "timeout"
 
 
 def test_test_push_with_fake_channel(root: Path, capsys) -> None:

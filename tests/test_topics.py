@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from ai_radar.pipeline.composer import _duplicate_of, compose_daily, compose_weekly
@@ -8,7 +8,7 @@ from ai_radar.pipeline.entities import extract, filter_by_frequency
 from ai_radar.pipeline.topics import build_topics
 from ai_radar.store.db import connect, init_db
 
-NOW = datetime(2026, 10, 26, 3, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 26, 3, tzinfo=UTC)
 DIM_1 = "1 模型与架构"
 DIM_3 = "3 推理与加速"
 DIM_8 = "8 数据与评测"

@@ -128,7 +128,7 @@ def run_bot(config: AppConfig, *, channel: str = "feishu") -> None:
     notifier = build_notifier(config, "feishu")
     router = MessageRouter(config, notifier)
 
-    def on_card_action(data) -> "P2CardActionTriggerResponse":
+    def on_card_action(data) -> P2CardActionTriggerResponse:
         value = {}
         if data.event and data.event.action and data.event.action.value:
             value = data.event.action.value

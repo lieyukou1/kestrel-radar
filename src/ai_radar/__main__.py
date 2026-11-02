@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .config import load_config
+from .config import ConfigError, load_config
 from .jobs.collect import run_collect
 from .notify_factory import CHANNELS, build_notifier
 from .pipeline.digest import build_digest
@@ -13,12 +14,23 @@ from .store import repo
 from .store.db import connect, init_db
 
 
+def _version() -> str:
+    try:
+        return version("kestrel-radar")
+    except PackageNotFoundError:
+        return "0.1.0"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ai-radar", description="AI Radar")
     parser.add_argument("--root", type=Path, default=None, help="项目根目录（默认自动推断）")
+    parser.add_argument(
+        "--version", action="version", version=f"kestrel-radar {_version()}"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help="初始化数据库")
+    sub.add_parser("config-check", help="校验配置并输出摘要（不写数据库）")
     sub.add_parser("collect", help="拉取所有启用的来源")
     sub.add_parser("status", help="查看状态")
     sub.add_parser("favorites", help="查看收藏夹")
@@ -85,7 +97,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    config = load_config(args.root)
+    try:
+        config = load_config(args.root)
+    except ConfigError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 2
+
+    if args.command == "config-check":
+        feed_count = sum(len(source.options.get("feeds") or []) for source in config.sources)
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "sources": len(config.sources),
+                    "feeds": feed_count,
+                    "network_mode": config.network.mode,
+                    "proxy_configured": bool(config.network.proxy),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     conn = connect(config.db_path)
     init_db(conn)
 

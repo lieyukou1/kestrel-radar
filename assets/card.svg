@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="720" viewBox="0 0 820 720" role="img" aria-label="Kestrel Radar 日报卡片示意">
+  <defs>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#1f2329" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="820" height="720" fill="#f2f3f5"/>
+
+  <g filter="url(#shadow)">
+    <rect x="30" y="24" width="760" height="672" rx="14" fill="#ffffff"/>
+  </g>
+
+  <!-- header -->
+  <text x="62" y="74" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="20" font-weight="700" fill="#1f2329">Kestrel Radar · 2026-11-02 周一</text>
+  <text x="62" y="100" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="13" fill="#8f959e">5 条内容 · 3 个来源 · 本周论文与仓库</text>
+  <line x1="62" y1="118" x2="758" y2="118" stroke="#e5e6eb" stroke-width="1"/>
+
+  <!-- theme -->
+  <text x="62" y="150" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" font-weight="600" fill="#8f959e" letter-spacing="1">今日主线</text>
+  <text x="62" y="180" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="19" font-weight="700" fill="#1f2329">推理框架的「显存墙」被绕开了</text>
+  <text x="62" y="205" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="13" fill="#646a73">三条不同来源的证据指向同一件事：KV cache 压缩进入工程化阶段</text>
+  <text x="62" y="227" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" fill="#8f959e">事件时间：2026-11-01（原文页面 · arxiv.org）</text>
+
+  <!-- item 1 -->
+  <line x1="62" y1="248" x2="758" y2="248" stroke="#f0f1f3" stroke-width="1"/>
+  <text x="62" y="282" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="15" font-weight="600" fill="#3370ff">1. 面向长上下文的稀疏 KV 缓存</text>
+  <text x="62" y="305" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" fill="#8f959e">论文 · 2 推理与加速 · 发布于 2026-11-01（昨天）· arXiv 引用 12</text>
+  <text x="62" y="327" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="13" fill="#646a73">把 128K 上下文的显存占用压到一半，且不需要重训模型。</text>
+  <g font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif" font-size="12">
+    <rect x="62" y="342" width="58" height="28" rx="6" fill="#3370ff"/>
+    <text x="91" y="361" fill="#ffffff" text-anchor="middle">详情</text>
+    <rect x="130" y="342" width="58" height="28" rx="6" fill="#ffffff" stroke="#d0d3d6"/>
+    <text x="159" y="361" fill="#1f2329" text-anchor="middle">收藏</text>
+    <rect x="198" y="342" width="76" height="28" rx="6" fill="#ffffff" stroke="#d0d3d6"/>
+    <text x="236" y="361" fill="#1f2329" text-anchor="middle">不感兴趣</text>
+  </g>
+
+  <!-- item 2 -->
+  <line x1="62" y1="392" x2="758" y2="392" stroke="#f0f1f3" stroke-width="1"/>
+  <text x="62" y="426" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="15" font-weight="600" fill="#3370ff">2. 我们把 128K 上下文的显存砍了一半</text>
+  <text x="62" y="449" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" fill="#8f959e">讨论 · 2 推理与加速 · HN 182 分 / 46 评论</text>
+  <text x="62" y="471" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="13" fill="#646a73">社区怎么看：有人复现成功；也有人提醒长尾延迟会变差。</text>
+  <text x="62" y="493" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" fill="#3370ff">社区讨论（HN）</text>
+  <g font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif" font-size="12">
+    <rect x="62" y="508" width="58" height="28" rx="6" fill="#3370ff"/>
+    <text x="91" y="527" fill="#ffffff" text-anchor="middle">详情</text>
+    <rect x="130" y="508" width="58" height="28" rx="6" fill="#ffffff" stroke="#d0d3d6"/>
+    <text x="159" y="527" fill="#1f2329" text-anchor="middle">收藏</text>
+    <rect x="198" y="508" width="76" height="28" rx="6" fill="#ffffff" stroke="#d0d3d6"/>
+    <text x="236" y="527" fill="#1f2329" text-anchor="middle">不感兴趣</text>
+  </g>
+
+  <!-- recall -->
+  <line x1="62" y1="558" x2="758" y2="558" stroke="#e5e6eb" stroke-width="1"/>
+  <text x="62" y="590" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="14" font-weight="700" fill="#1f2329">值得回看</text>
+  <text x="62" y="616" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="14" font-weight="600" fill="#3370ff">3. Agent 记忆系统的三种实现路径</text>
+  <text x="62" y="639" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="12" fill="#8f959e">你 9 月 12 日收藏过</text>
+
+  <!-- footer -->
+  <line x1="62" y1="664" x2="758" y2="664" stroke="#f0f1f3" stroke-width="1"/>
+  <g font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif" font-size="13" fill="#3370ff">
+    <text x="62" y="692">收藏夹</text>
+    <text x="130" y="692">知识库</text>
+    <text x="198" y="692">状态</text>
+  </g>
+  <text x="758" y="692" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif"
+        font-size="11" fill="#bbbfc4">示意 · 非真实推送截图</text>
+</svg>

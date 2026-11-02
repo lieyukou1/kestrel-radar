@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 
 import httpx
@@ -186,8 +186,8 @@ def _rfc822_to_iso(value: str | None) -> str | None:
     except (TypeError, ValueError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat(timespec="seconds")
 
 
 def _clean(value: str | None) -> str:

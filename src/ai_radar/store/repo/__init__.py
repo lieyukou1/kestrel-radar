@@ -117,6 +117,7 @@ from .vectors import (
 __all__ = [
     "MIN_WEIGHT",
     "THEME_KEY",
+    "action_count",
     "add_digest_item",
     "add_interaction",
     "add_note",

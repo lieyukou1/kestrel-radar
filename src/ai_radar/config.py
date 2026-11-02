@@ -9,6 +9,16 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+SUPPORTED_SOURCE_KINDS = ("arxiv", "hackernews", "hf_daily", "github", "rss", "lobsters")
+VALID_AUTHORITY = ("S", "A", "B", "C")
+VALID_REGION = ("domestic", "overseas")
+# overseas-only：只有 region=overseas 的来源走代理；direct：全部直连
+VALID_NETWORK_MODES = ("overseas-only", "direct")
+
+
+class ConfigError(ValueError):
+    """配置有误时尽早失败，并把所有问题一次列出来。"""
+
 
 @dataclass(slots=True)
 class NetworkConfig:
@@ -105,6 +115,66 @@ def _merge_sources(base: list[dict], extra: list[dict]) -> list[dict]:
     return merged
 
 
+def _validate_sources(items: list[dict], network_doc: dict) -> None:
+    """一次列出所有配置问题，避免拼错字段后静默少采集。"""
+    problems: list[str] = []
+    mode = str(network_doc.get("mode", "overseas-only"))
+    if mode not in VALID_NETWORK_MODES:
+        problems.append(
+            f"network.mode={mode!r} 不支持，可选：{', '.join(VALID_NETWORK_MODES)}"
+        )
+
+    seen_sources: set[str] = set()
+    for index, item in enumerate(items, start=1):
+        source_id = str(item.get("id") or "").strip()
+        kind = str(item.get("kind") or "").strip()
+        label = source_id or f"第 {index} 个来源"
+        if not source_id:
+            problems.append(f"{label}: 缺少 id")
+            continue
+        if source_id in seen_sources:
+            problems.append(f"{label}: id 重复")
+        seen_sources.add(source_id)
+
+        if kind not in SUPPORTED_SOURCE_KINDS:
+            problems.append(
+                f"{label}: kind={kind!r} 不支持，可选：{', '.join(SUPPORTED_SOURCE_KINDS)}"
+            )
+        authority = str(item.get("authority", "B")).upper()
+        if authority not in VALID_AUTHORITY:
+            problems.append(
+                f"{label}: authority={authority!r} 不支持，可选：{', '.join(VALID_AUTHORITY)}"
+            )
+        region = str(item.get("region", "domestic"))
+        if region not in VALID_REGION:
+            problems.append(
+                f"{label}: region={region!r} 不支持，可选：{', '.join(VALID_REGION)}"
+            )
+
+        if kind != "rss":
+            continue
+        feeds = item.get("feeds") or []
+        if not isinstance(feeds, list) or not feeds:
+            problems.append(f"{label}: rss 源必须配置非空 feeds")
+            continue
+        seen_feeds: set[str] = set()
+        for feed in feeds:
+            feed = feed if isinstance(feed, dict) else {}
+            feed_id = str(feed.get("id") or "").strip()
+            url = str(feed.get("url") or "").strip()
+            feed_label = f"{label}.{feed_id or '?'}"
+            if not feed_id:
+                problems.append(f"{feed_label}: 缺少 id")
+            elif feed_id in seen_feeds:
+                problems.append(f"{feed_label}: feed id 重复")
+            seen_feeds.add(feed_id)
+            if not url.startswith(("http://", "https://")):
+                problems.append(f"{feed_label}: url 必须是 http(s)，当前为 {url!r}")
+
+    if problems:
+        raise ConfigError("配置有问题：\n- " + "\n- ".join(problems))
+
+
 def load_config(root: Path | None = None) -> AppConfig:
     root = Path(root) if root else PROJECT_ROOT
     load_dotenv(root / ".env")
@@ -116,13 +186,19 @@ def load_config(root: Path | None = None) -> AppConfig:
 
     sources_doc = yaml.safe_load(sources_path.read_text(encoding="utf-8")) or {}
     sources_items = sources_doc.get("sources") or []
+    if not isinstance(sources_items, list):
+        raise ConfigError("config/sources.yaml 的 sources 必须是列表")
     if local_sources_path.exists():
         local_doc = yaml.safe_load(local_sources_path.read_text(encoding="utf-8")) or {}
-        sources_items = _merge_sources(sources_items, local_doc.get("sources") or [])
+        local_items = local_doc.get("sources") or []
+        if not isinstance(local_items, list):
+            raise ConfigError("config/sources.local.yaml 的 sources 必须是列表")
+        sources_items = _merge_sources(sources_items, local_items)
     weights = yaml.safe_load(weights_path.read_text(encoding="utf-8")) or {}
     models_doc = yaml.safe_load(models_path.read_text(encoding="utf-8")) or {}
 
     network_doc = sources_doc.get("network") or {}
+    _validate_sources(sources_items, network_doc)
     env_proxy = os.getenv("AI_RADAR_PROXY")
     if env_proxy is not None:
         proxy = None if env_proxy.strip().lower() in ("", "none", "off") else env_proxy.strip()

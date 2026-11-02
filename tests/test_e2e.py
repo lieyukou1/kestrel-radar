@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ai_radar.adapters.notify.fake import FakeNotifier
@@ -50,7 +50,7 @@ def test_collect_normalize_and_digest(tmp_path: Path) -> None:
     documents = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
     assert documents == 3
 
-    now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 21, 12, tzinfo=UTC)
     notifier = FakeNotifier(config.outbox_dir)
     result = build_digest(
         conn,

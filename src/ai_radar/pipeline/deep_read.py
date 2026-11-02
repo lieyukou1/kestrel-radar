@@ -318,7 +318,7 @@ def deep_read_document(
     claims = 0
     # 全部切块入库供检索；模型只处理前 MAX_CHUNKS 块以控制成本。
     processed = min(len(chunks), MAX_CHUNKS)
-    for chunk_id, chunk in zip(chunk_ids[:MAX_CHUNKS], chunks[:MAX_CHUNKS]):
+    for chunk_id, chunk in zip(chunk_ids[:MAX_CHUNKS], chunks[:MAX_CHUNKS], strict=True):
         card = _extract_chunk(llm, conn, document, chunk, processed)
         raw_claims = card.get("claims")
         if isinstance(raw_claims, list):

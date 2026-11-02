@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
+
 from rapidfuzz import fuzz
 
 from ...util import iso, utcnow

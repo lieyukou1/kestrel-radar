@@ -119,7 +119,7 @@ def embed_texts(texts: list[str]) -> list[list[float]] | None:
 def cosine(left: list[float], right: list[float]) -> float:
     if not left or not right or len(left) != len(right):
         return 0.0
-    dot = sum(a * b for a, b in zip(left, right))
+    dot = sum(a * b for a, b in zip(left, right, strict=True))
     norm_left = math.sqrt(sum(a * a for a in left))
     norm_right = math.sqrt(sum(b * b for b in right))
     if norm_left == 0 or norm_right == 0:
@@ -185,7 +185,7 @@ def ensure_vectors(
     vectors = embed_texts(texts)
     if vectors is None:
         return result
-    for document_id, vector in zip(kept, vectors):
+    for document_id, vector in zip(kept, vectors, strict=True):
         repo.save_vector(conn, document_id=document_id, model=name, vector=vector)
         result[document_id] = vector
     return result
