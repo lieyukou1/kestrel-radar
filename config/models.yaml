@@ -1,4 +1,4 @@
-# 模型与单价（M1 仅预留，尚未接入 LLM）
+# 模型与单价；各阶段共用默认模型，便于统一换模型。
 models:
   default: deepseek-flash
   stages:
