@@ -135,6 +135,11 @@ def collect_candidates(
     selection_cfg = weights.get("selection") or {}
     novelty_days = float(selection_cfg.get("novelty_days", 30))
     recent_titles = repo.recent_pushed_titles(conn, iso(now - timedelta(days=novelty_days)))
+    # 只要最近确实推过，就不再进候选：状态被手动回退、或采集/重放把文档改回
+    # observing 时，也不会把同一篇再推一遍。
+    recent_pushed_ids = repo.pushed_document_ids(
+        conn, iso(now - timedelta(days=novelty_days))
+    )
     preferences = repo.get_preference_weights(conn)
     theme_pref = repo.get_theme_preference(conn)
     paused = paused_dimensions(conn)
@@ -143,6 +148,8 @@ def collect_candidates(
 
     scored: list[dict] = []
     for document in repo.list_candidates(conn):
+        if int(document["id"]) in recent_pushed_ids:
+            continue
         if document["primary_tag"] in paused:
             continue
         if paused_src:

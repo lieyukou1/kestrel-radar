@@ -8,6 +8,7 @@ from ai_radar.adapters.notify.fake import FakeNotifier
 from ai_radar.adapters.sources.arxiv import ArxivAdapter
 from ai_radar.adapters.sources.hackernews import HackerNewsAdapter
 from ai_radar.config import AppConfig, load_config
+from ai_radar.pipeline import digest as digest_mod
 from ai_radar.pipeline.digest import build_digest
 from ai_radar.pipeline.normalize import merge_item
 from ai_radar.store import repo
@@ -90,3 +91,16 @@ def test_collect_normalize_and_digest(tmp_path: Path) -> None:
         now=now,
     )
     assert again["skipped"] is True
+
+    # 即使状态被手动改回 observing（例如重推、重放），近 30 天推过的文档也不能再进候选。
+    pushed_ids = [
+        int(row["document_id"])
+        for row in conn.execute(
+            "SELECT document_id FROM digest_items di "
+            "JOIN digests d ON d.id = di.digest_id WHERE d.digest_date = '2026-10-21'"
+        )
+    ]
+    assert pushed_ids
+    repo.mark_status(conn, pushed_ids, "observing")
+    candidates = digest_mod.collect_candidates(conn, config, now=now)
+    assert not ({int(entry["doc"]["id"]) for entry in candidates} & set(pushed_ids))

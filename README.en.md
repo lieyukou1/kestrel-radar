@@ -220,6 +220,7 @@ src/ai_radar/
 | Title dedupe (30-day window) | `token_set_ratio ≥ 90` |
 | Same-day duplicate | `partial_ratio ≥ 75` and `ratio ≥ 50`, or cosine ≥ 0.95 |
 | Entity conflict | only when both sides name a product; disjoint products / versions, or release vs incident → not merged |
+| Pushed guard | documents and titles pushed in the last 30 days never re-enter candidates, even if their status is reset |
 | Maturity | papers 48h / forums 24h / repos 24h / blogs 12h |
 | Topic clustering | cosine ≥ 0.82; entity-only ≥ 0.55; entities in >12 docs ignored; ≥2 members |
 | Echo | follow-up within 3 days of the event; 7-day fallback without event date |
