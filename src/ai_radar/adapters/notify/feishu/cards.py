@@ -134,7 +134,9 @@ def build_digest_card(
         for item in items:
             if item.section != section:
                 section = item.section
-                if not (section == "theme" and theme_label):
+                # 主线有标题时已在卡片顶部展示；没有标题时只展示降级说明。
+                # 两种情况下都不该再出现一个空的「今日主线」分区头。
+                if section != "theme":
                     header = SECTION_TITLES.get(section, section)
                     elements.append(
                         {

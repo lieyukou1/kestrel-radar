@@ -42,7 +42,9 @@ def render_digest(
     for item in items:
         if item.section != section:
             section = item.section
-            lines.extend([f"### {SECTION_TITLES.get(section, section)}", ""])
+            # 主线标题或降级说明已在顶部展示，这里不再重复分区头。
+            if section != "theme":
+                lines.extend([f"### {SECTION_TITLES.get(section, section)}", ""])
         lines.append(f"#### {item.rank}. {item.title}")
         lines.append("")
         lines.append(f"- 维度：{item.tag}")

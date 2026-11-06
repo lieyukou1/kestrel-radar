@@ -34,6 +34,21 @@ def test_render_digest_contains_items_and_discussion() -> None:
     assert "https://example.com/a" in text
 
 
+def test_render_digest_hides_theme_header_without_label() -> None:
+    """Webhook 渠道同样不能出现没有标题的「今日主线」分区。"""
+    theme_item = item()
+    theme_item.section = "theme"
+
+    text = render_digest(
+        "2026-11-02",
+        [theme_item],
+        theme_reason="今日没有清晰的跨来源主线，只推送时效性内容。",
+    )
+
+    assert "### 今日主线" not in text
+    assert "没有清晰的跨来源主线" in text
+
+
 def test_card_to_text_skips_buttons() -> None:
     card = {
         "header": {"title": {"tag": "plain_text", "content": "标题"}},

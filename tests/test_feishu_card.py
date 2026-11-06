@@ -113,6 +113,23 @@ def test_digest_card_explains_missing_theme() -> None:
     assert "没有跨来源的强主线" in all_text(card)
 
 
+def test_digest_card_hides_theme_header_when_label_missing() -> None:
+    """主线降级时只给原因，不能再挂一个空的「今日主线」分区头。"""
+    theme_item = item(1, 1)
+    theme_item.section = "theme"
+
+    card = build_digest_card(
+        "2026-10-27",
+        [theme_item, item(2, 2)],
+        theme_reason="今日没有清晰的跨来源主线，只推送时效性内容。",
+    )
+
+    content = all_text(card)
+    assert "今日主线" not in content
+    assert "没有清晰的跨来源主线" in content
+    assert "快讯" in content
+
+
 def test_preview_card_is_labelled() -> None:
     """预演卡不能和真实推送长得一样，否则会被记成“重复推送”。"""
     card = build_digest_card("2026-10-28", [item(1, 1)], preview=True)
