@@ -93,6 +93,10 @@ articles, search around a topic, and ask questions grounded in the KB — when t
 grounding, it says so instead of inventing an answer. Items saved or deep-read 30+ days ago
 resurface at the end of a daily digest as "Worth revisiting" (60-day gap, at most twice each).
 
+You can also send an article link directly (or `/read <url>`): it fetches the body, stores it,
+deep-reads it and pushes the explanation when done. WeChat public-account articles work too;
+if WeChat serves a verification page, you get the reason instead of a silent failure.
+
 ### 7. Feedback loop and dimension rotation
 
 Save / dislike / "fewer like this" / set a temporary theme all feed back into preference weights.
@@ -265,7 +269,7 @@ src/ai_radar/
 ```bash
 uv sync --dev
 uv run ruff check .
-uv run pytest -q        # 363 tests
+uv run pytest -q        # 372 tests
 ```
 
 Tests cover collector parsing, normalization and dedupe, entity conflicts, scoring and

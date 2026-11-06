@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from ai_radar.adapters.sources.base import RawItem
-from ai_radar.pipeline.normalize import canonical_id, merge_item, normalize_url
+from ai_radar.pipeline.normalize import (
+    canonical_from_url,
+    canonical_id,
+    merge_item,
+    normalize_url,
+)
 from ai_radar.store import repo
 from ai_radar.store.db import connect, init_db
 
@@ -47,6 +52,17 @@ def test_hn_story_pointing_to_arxiv_merges() -> None:
 
 def test_github_repo_is_normalized() -> None:
     assert canonical_id(item("https://github.com/Owner/Repo.git")) == "github:owner/repo"
+
+
+def test_url_only_canonical_matches_collector() -> None:
+    """手动发链接和采集侧必须算出同一个身份，否则同一条会被存两份。"""
+    for url in (
+        "https://arxiv.org/abs/2401.12345v2",
+        "https://arxiv.org/pdf/2401.12345v3",
+        "https://github.com/Owner/Repo.git",
+        "https://Example.com/Path/?utm_source=x&keep=1",
+    ):
+        assert canonical_from_url(url) == canonical_id(item(url))
 
 
 def test_tracking_params_are_removed() -> None:

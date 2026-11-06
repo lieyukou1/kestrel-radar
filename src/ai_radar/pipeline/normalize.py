@@ -45,17 +45,30 @@ def arxiv_id_from(item: RawItem) -> str | None:
     return None
 
 
-def canonical_id(item: RawItem) -> str:
-    arxiv_id = arxiv_id_from(item)
-    if arxiv_id:
-        return f"arxiv:{arxiv_id}"
+def canonical_from_url(url: str) -> str:
+    """只凭 URL 推导 canonical_id：arXiv / GitHub 用稳定标识，其余用归一化哈希。
 
-    github = GITHUB_REPO.search(item.url)
+    手动发链接（link_ingest）与采集侧必须共用这一份推导，否则同一条 arXiv
+    论文会以 `arxiv:xxx` 和 `url:<sha1>` 两个身份各入库一次。
+    """
+    arxiv = ARXIV_ID.search(url or "")
+    if arxiv:
+        return f"arxiv:{arxiv.group(1)}"
+
+    github = GITHUB_REPO.search(url or "")
     if github:
         return f"github:{github.group(1).lower()}/{github.group(2).lower().removesuffix('.git')}"
 
-    digest = hashlib.sha1(normalize_url(item.url).encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(normalize_url(url).encode("utf-8")).hexdigest()
     return f"url:{digest}"
+
+
+def canonical_id(item: RawItem) -> str:
+    # 采集侧的 external_id 也可能带 arXiv 编号，这一路 URL 里看不出来。
+    arxiv_id = arxiv_id_from(item)
+    if arxiv_id:
+        return f"arxiv:{arxiv_id}"
+    return canonical_from_url(item.url)
 
 
 def merge_item(conn: sqlite3.Connection, item: RawItem, authority: str) -> int:

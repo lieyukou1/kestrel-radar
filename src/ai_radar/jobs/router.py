@@ -22,7 +22,7 @@ from ..adapters.notify.feishu import (
     build_topic_card,
 )
 from ..config import AppConfig
-from ..pipeline import qa
+from ..pipeline import link_ingest, qa
 from ..pipeline.compare import compare_documents, find_related
 from ..pipeline.intent import parse_intent
 from ..pipeline.interactions import DISLIKE_REASONS, format_status, handle_action
@@ -47,6 +47,7 @@ HELP_TEXT = """AI Radar 命令
 /topic <关键词>            按话题检索全库，本地不足时补 arXiv / HN / GitHub
 /related <文章ID>          找知识库里的相关文章
 /compare <ID1> <ID2>      对比两篇已精读文章
+/read <链接>              精读一篇你发来的文章（也可以直接发链接）
 /pause dimension 4        暂停某个维度
 /resume dimension 4       恢复某个维度
 /pause source hackernews  暂停某个来源
@@ -133,6 +134,13 @@ class MessageRouter:
                         "right_id": int(parts[2]),
                     }
                 )
+        elif command == "/read":
+            url = link_ingest.extract_url(text)
+            if url is None:
+                self.notifier.send_text("用法：/read <文章链接>，也可以直接发链接。")
+            else:
+                self.notifier.send_text("收到链接，正在抓取原文…")
+                self._background(self.ingest_link, url, name="ai-radar-link")
         elif command in ("/pause", "/resume"):
             self._toggle(text, command)
         elif command == "/help":
@@ -140,7 +148,12 @@ class MessageRouter:
         elif text.startswith("/"):
             self.notifier.send_text(f"未识别的命令。\n\n{HELP_TEXT}")
         else:
-            self._background(self.handle_natural_language, text, name="ai-radar-nl")
+            url = link_ingest.extract_url(text)
+            if url is not None:
+                self.notifier.send_text("收到链接，正在抓取原文…")
+                self._background(self.ingest_link, url, name="ai-radar-link")
+            else:
+                self._background(self.handle_natural_language, text, name="ai-radar-nl")
 
     def on_event_message(self, data) -> None:
         """长连接消息事件：解析 SDK 对象后交给 process_text。"""
@@ -301,6 +314,34 @@ class MessageRouter:
             )
         )
         return f"{title}共 {counts['total']} 篇"
+
+    # ---------- 手动链接精读 ----------
+
+    def ingest_link(self, url: str) -> None:
+        """后台跑：抓原文、落库、入精读队列；结果与失败都回一条消息。"""
+        conn = connect(self.config.db_path)
+        init_db(conn)
+        try:
+            result = link_ingest.ingest_link(conn, self.config, url)
+        except link_ingest.LinkIngestError as exc:
+            self.notifier.send_text(f"精读失败：{exc}")
+            return
+        except Exception as exc:  # 单条链接不能把消息线程带崩
+            print(f"[link] failed {type(exc).__name__}: {exc}", flush=True)
+            self.notifier.send_text("精读失败：处理这条链接时出错了，可以稍后重试。")
+            return
+
+        title = str(result["title"])[:80]
+        state = result["state"]
+        if state == "ready":
+            self.notifier.send_text(f"这篇已经精读过：{title}")
+        elif state == "queued_existing":
+            self.notifier.send_text(f"这篇已在精读队列里：{title}")
+        elif state == "requeued":
+            self.notifier.send_text(f"已重新加入精读队列：{title}")
+        else:
+            self.notifier.send_text(f"已加入精读队列：{title}\n完成后会推送深度讲解。")
+        print(f"[link] {state} document_id={result['document_id']}", flush=True)
 
     # ---------- 自然语言 ----------
 

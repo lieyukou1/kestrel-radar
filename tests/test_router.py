@@ -107,6 +107,32 @@ def test_status_reads_database(tmp_path) -> None:
     assert "documents_by_status" in notifier.texts[0]
 
 
+def test_plain_message_with_url_queues_deep_read(tmp_path) -> None:
+    router, notifier = make_router(tmp_path)
+    calls = background_spy(router)
+
+    router.process_text("看看这个 https://example.com/post?a=1")
+
+    assert "收到链接" in notifier.texts[0]
+    assert calls == [("ingest_link", ("https://example.com/post?a=1",))]
+
+
+def test_read_command_requires_url(tmp_path) -> None:
+    router, notifier = make_router(tmp_path)
+    router.process_text("/read")
+    assert "用法" in notifier.texts[0]
+
+
+def test_read_command_with_url_queues_deep_read(tmp_path) -> None:
+    router, notifier = make_router(tmp_path)
+    calls = background_spy(router)
+
+    router.process_text("/read https://example.com/post")
+
+    assert "收到链接" in notifier.texts[0]
+    assert calls == [("ingest_link", ("https://example.com/post",))]
+
+
 def test_kb_command_sends_card(tmp_path) -> None:
     router, notifier = make_router(tmp_path)
     router.process_text("/kb")
