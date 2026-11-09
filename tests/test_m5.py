@@ -227,6 +227,127 @@ def test_digest_records_theme_dimension(tmp_path: Path) -> None:
     assert topic["dimension"] == "1 模型与架构"
 
 
+def test_unlabeled_theme_degrades_instead_of_publishing(tmp_path: Path, monkeypatch) -> None:
+    """模型判定「不是一件事」时不能硬发主线：不写 topics，条目回到快讯池。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    for kind in ("paper", "blog", "forum"):
+        add_document(
+            conn,
+            title=f"JEV 新版把沙箱搬进浏览器（{kind}）",
+            tag="1 模型与架构",
+            status="observing",
+            kind=kind,
+        )
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    monkeypatch.setattr(
+        digest_mod,
+        "_apply_theme_label",
+        lambda *a, **k: digest_mod.ThemeLabel(
+            why="今日没有清晰的跨来源主线，只推送时效性内容。"
+        ),
+    )
+
+    result = build_digest(
+        conn,
+        config,
+        notifier=FakeNotifier(config.outbox_dir),
+        digest_date="2026-10-21",
+    )
+
+    assert result["count"] >= 1
+    assert conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0] == 0
+    sections = [row["section"] for row in conn.execute("SELECT section FROM digest_items")]
+    assert "theme" not in sections
+    assert "没有清晰的跨来源主线" in Path(result["outbox"]).read_text(encoding="utf-8")
+
+
+def test_selected_items_are_retagged_by_llm(tmp_path: Path, monkeypatch) -> None:
+    """关键词把 CUA 数据工程归到 Agent 时，入选后的重打标要覆盖展示与库里的维度。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    doc_id = add_document(
+        conn,
+        title="CUA-Master: Scaling Computer-use Agents through Open-World Recursive Improvements",
+        tag="4 Agent 与应用",
+        status="observing",
+        kind="paper",
+        days_ago=3,
+    )
+
+    class FakeDeepSeek:
+        def __init__(self, config) -> None:
+            pass
+
+        def summarize(self, conn, document):
+            return None
+
+        def classify_dimensions(self, conn, documents):
+            return {int(item["id"]): "2 训练与对齐" for item in documents}
+
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", FakeDeepSeek)
+
+    result = build_digest(
+        conn,
+        config,
+        notifier=FakeNotifier(config.outbox_dir),
+        digest_date="2026-11-02",
+        kind="weekly",
+    )
+
+    assert result["count"] == 1
+    assert "训练与对齐" in Path(result["outbox"]).read_text(encoding="utf-8")
+    assert repo.get_document(conn, doc_id)["primary_tag"] == "2 训练与对齐"
+
+
+def test_retag_failure_keeps_original_dimension(tmp_path: Path, monkeypatch) -> None:
+    """重打标是可选增强：模型失败时沿用采集时的标签，推送不能受影响。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    doc_id = add_document(
+        conn,
+        title="CUA-Master: Scaling Computer-use Agents",
+        tag="4 Agent 与应用",
+        status="observing",
+        kind="paper",
+        days_ago=3,
+    )
+
+    class FakeDeepSeek:
+        def __init__(self, config) -> None:
+            pass
+
+        def summarize(self, conn, document):
+            return None
+
+        def classify_dimensions(self, conn, documents):
+            raise digest_mod.LLMError("boom")
+
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", FakeDeepSeek)
+
+    result = build_digest(
+        conn,
+        config,
+        notifier=FakeNotifier(config.outbox_dir),
+        digest_date="2026-11-02",
+        kind="weekly",
+    )
+
+    assert result["count"] == 1
+    assert repo.get_document(conn, doc_id)["primary_tag"] == "4 Agent 与应用"
+
+
 def test_missing_theme_note_only_for_daily(tmp_path: Path) -> None:
     """周报没有「主线」是正常结构，不该显示“今天没有强主线”。"""
     from ai_radar.pipeline.composer import Composition

@@ -101,6 +101,11 @@ def _topic_dimension(topic: topics.Topic) -> str:
     return max(counts, key=lambda tag: (counts[tag], best[tag]))
 
 
+def topic_dimension(topic: topics.Topic) -> str:
+    """对外暴露：重打标后需要重新计算主线维度。"""
+    return _topic_dimension(topic)
+
+
 def _pick_theme(
     found: list[topics.Topic],
     rotation,
@@ -209,6 +214,7 @@ def compose_daily(
     rotation=None,
     theme_pref: dict | None = None,
     blocked_entities: set[str] | frozenset[str] | None = None,
+    allow_theme: bool = True,
 ) -> Composition:
     now = now or utcnow()
     weights = config.weights
@@ -223,16 +229,21 @@ def compose_daily(
         topic_pool,
         vectors,
         min_members=int(cfg.get("min_members", 2)),
-        similarity=float(cfg.get("similarity", 0.82)),
+        similarity=float(cfg.get("similarity", 0.95)),
         entity_similarity=float(cfg.get("entity_similarity", 0.55)),
         max_docs=int(cfg.get("max_docs", 12)),
     )
-    theme = _pick_theme(
-        found,
-        rotation,
-        float(rotation_cfg.get("theme_band", 0.85)),
-        theme_pref,
-        blocked=blocked_entities,
+    # allow_theme=False 用于「模型判定不成主线」后的降级：条目直接回流到突发/快讯池。
+    theme = (
+        _pick_theme(
+            found,
+            rotation,
+            float(rotation_cfg.get("theme_band", 0.85)),
+            theme_pref,
+            blocked=blocked_entities,
+        )
+        if allow_theme
+        else None
     )
 
     blocks: list[Block] = []

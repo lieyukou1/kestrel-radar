@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from ai_radar.pipeline.composer import _duplicate_of, compose_daily, compose_weekly
 from ai_radar.pipeline.entities import extract, filter_by_frequency
 from ai_radar.pipeline.topics import build_topics
@@ -133,7 +135,43 @@ def test_topics_merge_by_shared_entity_across_kinds(tmp_path) -> None:
     assert topic.label == "jev"
     assert len(topic.items) == 3
     assert len(topic.kinds) == 3
-    assert topic.score > sum(item["score"] for item in topic.items)
+    # 话题分是平均分乘跨类型加成，不是成员总分：否则大簇必然霸榜。
+    average = sum(item["score"] for item in topic.items) / len(topic.items)
+    assert topic.score == pytest.approx(average * 1.24)
+
+
+def test_cluster_stops_growing_at_max_docs() -> None:
+    """一个热点不能无限吞并：簇达到上限后必须另起新簇。"""
+    items = [
+        entry(1, "blog", "long context retrieval one", 0.90),
+        entry(2, "forum", "long context retrieval two", 0.89),
+        entry(3, "blog", "long context retrieval three", 0.88),
+        entry(4, "forum", "long context retrieval four", 0.87),
+        entry(5, "blog", "long context retrieval five", 0.86),
+        entry(6, "forum", "long context retrieval six", 0.85),
+    ]
+    same = {doc_id: [1.0, 0.0] for doc_id in range(1, 7)}
+
+    found = build_topics(items, vectors=same, max_docs=3, similarity=0.82)
+
+    assert found
+    assert max(len(topic.items) for topic in found) <= 3
+
+
+def test_vector_fallback_does_not_chain_unrelated_items() -> None:
+    """A≈B、B≈C 不能推出 A≈C；否则一篇热门论文能串起当天所有内容。"""
+    items = [
+        entry(1, "blog", "long context retrieval alpha", 0.90),
+        entry(2, "paper", "long context retrieval beta", 0.85),
+        entry(3, "forum", "long context retrieval gamma", 0.80),
+    ]
+    # 2 与 1 相似、3 与 2 相似，但 1 与 3 正交
+    vectors = {1: [1.0, 0.0], 2: [0.7, 0.7], 3: [0.0, 1.0]}
+
+    found = build_topics(items, vectors=vectors, similarity=0.6)
+
+    assert len(found) == 1
+    assert len(found[0].items) == 2
 
 
 def test_single_item_topics_are_dropped() -> None:
@@ -164,6 +202,24 @@ def test_compose_daily_puts_theme_first_then_briefs(tmp_path, monkeypatch) -> No
     briefs = [block for block in composition.blocks if block.section == "brief"]
     assert briefs and all(item["doc"]["kind"] in ("blog", "forum") for item in briefs[0].items)
     assert len(composition.items) <= 5
+
+
+def test_compose_daily_can_disable_theme(tmp_path, monkeypatch) -> None:
+    """allow_theme=False 用于降级：原本能成主线的条目也要回到快讯池。"""
+    conn = connect(tmp_path / "test.db")
+    init_db(conn)
+    monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
+
+    items = [
+        entry(1, "paper", "JEV v2: Browser-Native Agent Sandbox", 0.82),
+        entry(2, "blog", "JEV 新版把沙箱搬进浏览器", 0.80),
+        entry(3, "forum", "JEV is now sandboxed, thoughts?", 0.78),
+    ]
+    composition = compose_daily(conn, Config(), items, now=NOW, allow_theme=False)
+
+    assert composition.theme is None
+    assert all(block.section != "theme" for block in composition.blocks)
+    assert composition.items
 
 
 def test_compose_daily_drops_duplicate_titles_in_theme(tmp_path, monkeypatch) -> None:

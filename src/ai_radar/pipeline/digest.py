@@ -498,6 +498,41 @@ def _theme_history(conn: sqlite3.Connection, entity: str, today: date) -> str:
     )
 
 
+def _retag_selected(
+    llm: DeepSeekLLM | None, conn: sqlite3.Connection, entries: list[dict]
+) -> dict[int, str]:
+    """给真正入选推送的少量内容做一次 LLM 重打标。
+
+    采集时的关键词启发式会把「Agent 数据工程」归到 Agent、把集合名归到模型，
+    只修正用户要看的那几条；调用失败或结果非法时沿用原标签，不影响推送。
+    """
+    classify = getattr(llm, "classify_dimensions", None)
+    if llm is None or not entries or not callable(classify):
+        return {}
+    payload = [
+        {
+            "id": int(entry["doc"]["id"]),
+            "title": str(entry["doc"]["title"] or ""),
+            "kind": str(entry["doc"]["kind"] or ""),
+            "abstract": str(entry["doc"]["abstract"] or ""),
+        }
+        for entry in entries
+    ]
+    try:
+        mapping = classify(conn, payload)
+    except (BudgetExceeded, LLMError) as exc:
+        print(f"[digest] retag skipped: {type(exc).__name__}: {exc}", flush=True)
+        return {}
+    for entry in entries:
+        document_id = int(entry["doc"]["id"])
+        tag = mapping.get(document_id)
+        if not tag or tag == entry.get("tag"):
+            continue
+        entry["tag"] = tag
+        repo.update_primary_tag(conn, document_id, tag)
+    return mapping
+
+
 def _apply_theme_label(
     llm: DeepSeekLLM | None,
     conn: sqlite3.Connection,
@@ -589,6 +624,19 @@ def build_digest(
     theme_pref = repo.get_theme_preference(conn)
     turn = None
 
+    def _compose_daily(**overrides) -> composer.Composition:
+        return composer.compose_daily(
+            conn,
+            config,
+            scored,
+            now=now,
+            size=size or int(cadence.get("daily_size", 5)),
+            theme_limit=int(cadence.get("daily_theme_items", 3)),
+            rotation=turn,
+            theme_pref=theme_pref,
+            **overrides,
+        )
+
     if kind == "weekly":
         composition = composer.compose_weekly(
             conn,
@@ -601,16 +649,7 @@ def build_digest(
     else:
         # 轮转冷启动期间乘子恒为 1.0，这里传进去只是让统计随每次推送累积。
         turn = rotation.rotation_state(conn, config, now=now)
-        composition = composer.compose_daily(
-            conn,
-            config,
-            scored,
-            now=now,
-            size=size or int(cadence.get("daily_size", 5)),
-            theme_limit=int(cadence.get("daily_theme_items", 3)),
-            rotation=turn,
-            theme_pref=theme_pref,
-        )
+        composition = _compose_daily()
 
     digest_id = repo.create_digest(conn, date, kind=kind)
     llm = DeepSeekLLM(config.llm) if config.llm else None
@@ -625,6 +664,22 @@ def build_digest(
             else ""
         ),
     )
+    # 模型判定「这些内容不是一件事」时，不能硬发一条没有名字的主线：
+    # 先换一条强主线；换不出来就彻底不发主线，让条目回到突发/快讯池。
+    if kind == "daily" and composition.theme is not None and not labeled.label:
+        rejected = {composition.theme.label}
+        composition = _compose_daily(blocked_entities=rejected)
+        if composition.theme is not None:
+            labeled = _apply_theme_label(
+                llm,
+                conn,
+                composition,
+                config=config,
+                history=_theme_history(conn, composition.theme.label, now.date()),
+            )
+        if composition.theme is not None and not labeled.label:
+            composition = _compose_daily(blocked_entities=rejected, allow_theme=False)
+            labeled = ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
     # 同一件事的跟进报道不该再占一次主线：能换出别的强主线就照常开，换不出就只发快讯。
     echo = None
     if composition.theme is not None:
@@ -638,17 +693,7 @@ def build_digest(
         )
     if echo is not None:
         note = _echo_note(echo, composition.theme.label, labeled.when)
-        composition = composer.compose_daily(
-            conn,
-            config,
-            scored,
-            now=now,
-            size=size or int(cadence.get("daily_size", 5)),
-            theme_limit=int(cadence.get("daily_theme_items", 3)),
-            rotation=turn,
-            theme_pref=theme_pref,
-            blocked_entities={echo["entity"]},
-        )
+        composition = _compose_daily(blocked_entities={echo["entity"]})
         if composition.theme is not None:
             labeled = _apply_theme_label(
                 llm,
@@ -668,6 +713,11 @@ def build_digest(
         theme_reason = theme_reason or "按你设定的临时主题优先挑选"
     # 卡片上的「围绕此话题找」优先用实体名，它比模型起的标题更适合当检索词。
     theme_query = composition.theme.label if composition.theme is not None else ""
+
+    # 只在入选之后重打标：只影响要看的内容和维度轮转，不额外给全库分类花钱。
+    retagged = _retag_selected(llm, conn, composition.items)
+    if retagged and composition.theme is not None:
+        composition.theme_dimension = composer.topic_dimension(composition.theme)
 
     if composition.theme is not None:
         topic_id = repo.add_topic(

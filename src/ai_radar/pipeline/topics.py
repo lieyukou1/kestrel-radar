@@ -47,19 +47,22 @@ def _doc_id(entry: dict) -> int:
         return 0
 
 
-def _best_similarity(vectors: dict[int, list[float]], doc_id: int, topic: Topic) -> float | None:
-    """文档与话题内最相似成员的余弦；没有向量时返回 None（离线环境不做语义判断）。"""
+def _representative_similarity(
+    vectors: dict[int, list[float]], doc_id: int, topic: Topic
+) -> float | None:
+    """文档与话题「代表条目」的余弦；没有向量时返回 None（离线环境不做语义判断）。
+
+    只跟代表比、不跟任意成员比：后者会形成单链传递（A≈B、B≈C 就合并 A/C），
+    一篇热门论文能把当天上百条不相干的内容串成同一个话题。
+    """
     vector = vectors.get(doc_id)
-    if not vector:
+    if not vector or not topic.items:
         return None
-    best: float | None = None
-    for member in topic.items:
-        other = vectors.get(_doc_id(member))
-        if not other:
-            continue
-        similarity = cosine(vector, other)
-        best = similarity if best is None else max(best, similarity)
-    return best
+    representative = max(topic.items, key=lambda item: float(item["score"]))
+    other = vectors.get(_doc_id(representative))
+    if not other:
+        return None
+    return cosine(vector, other)
 
 
 def is_bucket_label(label: str) -> bool:
@@ -71,7 +74,8 @@ def build_topics(
     vectors: dict[int, list[float]],
     *,
     min_members: int = 2,
-    similarity: float = 0.82,
+    # 默认值跟着 weights.yaml 走：这个模型对英文文本的基础相似度偏高，0.82 会串成大簇。
+    similarity: float = 0.95,
     max_docs: int = 12,
     entity_similarity: float = ENTITY_SIMILARITY,
 ) -> list[Topic]:
@@ -91,6 +95,9 @@ def build_topics(
         best: Topic | None = None
         best_overlap = 0
         for topic in clusters:
+            # 簇满了就不再接收：没有这个上限，一个热门话题会滚雪球吞掉当天所有候选。
+            if len(topic.items) >= max_docs:
+                continue
             overlap = len(own & topic.entities)
             if overlap <= best_overlap:
                 continue
@@ -98,23 +105,23 @@ def build_topics(
             if overlap >= 2:
                 best, best_overlap = topic, overlap
                 continue
-            semantic = _best_similarity(vectors, doc_id, topic)
+            semantic = _representative_similarity(vectors, doc_id, topic)
             if semantic is None or semantic >= entity_similarity:
                 best, best_overlap = topic, overlap
 
         if best is None and vectors:
-            # 没有共同实体时，退回向量相似度（同一事件的不同命名）
+            # 没有共同实体时，退回与代表条目的向量相似度（同一事件的不同命名）
             vector = vectors.get(doc_id)
             if vector:
                 best_sim = 0.0
                 for topic in clusters:
-                    for member in topic.items:
-                        other = vectors.get(_doc_id(member))
-                        if not other:
-                            continue
-                        sim = cosine(vector, other)
-                        if sim >= similarity and sim > best_sim:
-                            best, best_sim = topic, sim
+                    if len(topic.items) >= max_docs:
+                        continue
+                    sim = _representative_similarity(vectors, doc_id, topic)
+                    if sim is None:
+                        continue
+                    if sim >= similarity and sim > best_sim:
+                        best, best_sim = topic, sim
 
         if best is None:
             topic = Topic(
@@ -136,8 +143,10 @@ def build_topics(
         # 只靠向量粘起来的簇必须有跨类型证据，否则宁可不成题
         if not topic.entities and len(topic.kinds) < 2:
             continue
-        total = sum(float(item["score"]) for item in topic.items)
-        topic.score = total * (1.0 + 0.12 * (len(topic.kinds) - 1))
+        # 用平均分而不是总分：否则成员越多分数越高，大簇必然霸榜，
+        # 跨来源的价值也会被「体量」淹没。
+        average = sum(float(item["score"]) for item in topic.items) / len(topic.items)
+        topic.score = average * (1.0 + 0.12 * (len(topic.kinds) - 1))
         label = _topic_label(topic)
         if label:
             topic.label = label

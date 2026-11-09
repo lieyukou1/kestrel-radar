@@ -49,6 +49,7 @@ from .documents import (
     signal_series,
     source_external_id,
     update_document_authority,
+    update_primary_tag,
 )
 from .interactions import (
     action_count,
@@ -205,6 +206,7 @@ __all__ = [
     "start_run",
     "stats",
     "update_document_authority",
+    "update_primary_tag",
     "update_preference",
     "upsert_source",
 ]

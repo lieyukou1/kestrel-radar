@@ -30,6 +30,15 @@ def update_document_authority(
     )
     conn.commit()
 
+def update_primary_tag(conn: sqlite3.Connection, document_id: int, tag: str) -> None:
+    """用重打标结果覆盖主维度；tags_json 保持采集时的原样，便于回溯。"""
+    conn.execute(
+        "UPDATE documents SET primary_tag = ? WHERE id = ?",
+        (tag, document_id),
+    )
+    conn.commit()
+
+
 def list_recent_titles(conn: sqlite3.Connection, since_iso: str) -> list[str]:
     rows = conn.execute(
         "SELECT title FROM documents WHERE merged_into IS NULL AND first_seen_at >= ?",

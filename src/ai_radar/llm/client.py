@@ -11,9 +11,19 @@ import httpx
 from ..config import LLMConfig
 from ..store import repo
 from ..util import utcnow
-from .prompts import SUMMARY_SYSTEM, SUMMARY_TEMPLATE, THEME_SYSTEM, THEME_TEMPLATE
+from .prompts import (
+    DIMENSIONS,
+    SUMMARY_SYSTEM,
+    SUMMARY_TEMPLATE,
+    TAG_SYSTEM,
+    TAG_TEMPLATE,
+    THEME_SYSTEM,
+    THEME_TEMPLATE,
+)
 
 MAX_CONTENT_CHARS = 6000
+MAX_TAG_DOCS = 12
+MAX_TAG_ABSTRACT = 320
 
 # 模型给出的事件时间只接受「年-月」或「年-月-日」，其余一律丢弃，避免脏字符串上卡片。
 _WHEN_PATTERN = re.compile(r"^\d{4}(-\d{2}){0,2}$")
@@ -70,6 +80,17 @@ def _clean_flag(value: Any) -> bool | None:
     if text in ("false", "no", "0", "否"):
         return False
     return None
+
+
+def _clean_dimension(value: Any) -> str:
+    """只接受八个分类的完整名称或数字前缀；其余一律丢弃，宁可不改也别写脏数据。"""
+    text = str(value or "").strip()
+    if text in DIMENSIONS:
+        return text
+    for dimension in DIMENSIONS:
+        if text == dimension.split()[0]:
+            return dimension
+    return ""
 
 
 def estimate_cost(
@@ -217,6 +238,56 @@ class DeepSeekLLM:
             "is_update": _clean_flag(data.get("is_update")),
             "change": str(data.get("change") or "").strip(),
         }
+
+    def classify_dimensions(
+        self, conn: sqlite3.Connection, documents: list[dict]
+    ) -> dict[int, str]:
+        """给即将推送的少量内容重打标，修正关键词启发式的误判。
+
+        documents 每项含 id/title/kind/abstract。返回 {document_id: dimension}；
+        解析失败返回空字典，调用方沿用原标签，不影响推送。
+        """
+        if not documents:
+            return {}
+        payload = json.dumps(
+            [
+                {
+                    "id": int(item["id"]),
+                    "title": str(item.get("title") or "")[:120],
+                    "kind": str(item.get("kind") or ""),
+                    "abstract": str(item.get("abstract") or "")[:MAX_TAG_ABSTRACT],
+                }
+                for item in documents[:MAX_TAG_DOCS]
+            ],
+            ensure_ascii=False,
+        )
+        text, _ = self.chat(
+            conn,
+            stage="tag",
+            system=TAG_SYSTEM,
+            user=TAG_TEMPLATE.format(payload=payload),
+            # 思考模型先消耗推理 token，额度给小了会返回空内容。
+            max_tokens=1200,
+        )
+        try:
+            data = parse_json_object(text)
+        except LLMError:
+            return {}
+        items = data.get("items")
+        if not isinstance(items, list):
+            return {}
+        result: dict[int, str] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                document_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            dimension = _clean_dimension(item.get("dimension"))
+            if dimension:
+                result[document_id] = dimension
+        return result
 
     def summarize(self, conn: sqlite3.Connection, document: sqlite3.Row) -> dict | None:
         cached = repo.find_latest_summary(conn, int(document["id"]))
