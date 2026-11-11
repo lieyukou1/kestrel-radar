@@ -22,6 +22,9 @@ from collections import Counter
 
 LATIN_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[.\-_][A-Za-z0-9]+)*")
 CJK_TOKEN = re.compile(r"[\u4e00-\u9fff]{2,8}")
+# 「名称 + 版本号」是最稳的产品写法：Fable 5.2、Qwen3、Claude 5.5。
+# 新模型名不用每次补词表，靠这条规则就能把名字摘出来（"5.2" 本身不是字母开头，抓不到）。
+VERSIONED_NAME = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]+(?:-[A-Za-z]+)*)[\s\-]?v?\d+(?:\.\d+)?")
 
 # 具体产品/公司/模型名：命中即视为实体
 GAZETTEER_LATIN = {
@@ -107,6 +110,11 @@ def extract(text: str) -> set[str]:
                 found.add(lowered)
     for name in GAZETTEER_CJK:
         if name in (text or ""):
+            found.add(name)
+    # 「名字 + 版本号」直接算产品名，不再要求命中词表或全大写。
+    for match in VERSIONED_NAME.finditer(text or ""):
+        name = match.group(1).lower()
+        if len(name) >= 3:
             found.add(name)
     return {
         item

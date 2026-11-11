@@ -109,10 +109,12 @@ from .stats import stats
 from .topics import (
     add_topic,
     add_topic_item,
+    get_topic,
     last_topic_by_key,
     last_topic_for_entity,
     recent_topics,
     topic_document_ids,
+    topic_items,
 )
 from .usage import daily_usage, record_llm_usage
 from .vectors import (
@@ -195,6 +197,8 @@ __all__ = [
     "last_topic_for_entity",
     "last_topic_by_key",
     "topic_document_ids",
+    "get_topic",
+    "topic_items",
     "record_llm_usage",
     "remove_interaction",
     "remove_kb_article",

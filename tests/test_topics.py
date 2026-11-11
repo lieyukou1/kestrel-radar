@@ -79,6 +79,14 @@ def test_extract_keeps_product_names_and_drops_generic_words() -> None:
     assert "豆包" in extract("豆包发布新版本")
 
 
+def test_extract_recognizes_name_with_version_without_gazetteer() -> None:
+    """新模型名不必先补词表：「名字 + 版本号」就是产品名（Fable 5.2）。"""
+    assert "fable" in extract("Fable 5.2首批实测来了！网友：Opus突然不香了")
+    assert "fable" in extract("Claude Fable 5.2 now available on AI Gateway")
+    # 通用词就算带版本号也不能当实体
+    assert "gpt" not in extract("GPT 5.5 发布")
+
+
 def test_venue_names_are_not_topic_entities() -> None:
     """会议/期刊名可以被多篇共享，但那是「同一个会」，不是「同一件事」。"""
     assert extract("EMNLP 2026 | 中科大提出AtomMem，用原子事实重建Agent长期记忆") == set()
@@ -105,7 +113,7 @@ def test_entities_filtered_by_document_frequency() -> None:
     assert "generic" not in filtered[4]
 
 
-def test_compose_daily_puts_theme_first_then_briefs(tmp_path, monkeypatch) -> None:
+def test_compose_daily_puts_theme_first_then_other_events(tmp_path, monkeypatch) -> None:
     conn = connect(tmp_path / "test.db")
     init_db(conn)
     monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
@@ -121,17 +129,17 @@ def test_compose_daily_puts_theme_first_then_briefs(tmp_path, monkeypatch) -> No
     composition = compose_daily(conn, Config(), items, now=NOW)
 
     assert composition.theme is not None
-    assert composition.blocks[0].section == "theme"
-    theme_items = composition.blocks[0].items
-    assert len(theme_items) == 3
-    assert sum(1 for item in theme_items if item["doc"]["kind"] == "paper") == 1
-    briefs = [block for block in composition.blocks if block.section == "brief"]
-    assert briefs and all(item["doc"]["kind"] in ("blog", "forum") for item in briefs[0].items)
-    assert len(composition.items) <= 5
+    assert composition.events[0] is composition.theme
+    # 主线事件保留全部成员（论文/媒体/讨论各一条）
+    assert len(composition.events[0].items) == 3
+    # 其余内容各自成为单篇事件，不再掉进「快讯」；仓库留给周报，不单独占日推
+    assert len(composition.events) == 3
+    assert len(composition.items) == 5
+    assert composition.blocks == []
 
 
 def test_compose_daily_can_disable_theme(tmp_path, monkeypatch) -> None:
-    """allow_theme=False 用于降级：原本能成主线的条目也要回到快讯池。"""
+    """allow_theme=False 用于降级：事件本身照常展示，只是不再标主线。"""
     conn = connect(tmp_path / "test.db")
     init_db(conn)
     monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
@@ -144,12 +152,13 @@ def test_compose_daily_can_disable_theme(tmp_path, monkeypatch) -> None:
     composition = compose_daily(conn, Config(), items, now=NOW, allow_theme=False)
 
     assert composition.theme is None
-    assert all(block.section != "theme" for block in composition.blocks)
+    assert composition.progress == []
+    assert len(composition.events) == 1
     assert composition.items
 
 
-def test_compose_daily_drops_duplicate_titles_in_theme(tmp_path, monkeypatch) -> None:
-    """同一件事被两个号重复报道时，主线不重复占位。"""
+def test_compose_daily_keeps_all_event_items(tmp_path, monkeypatch) -> None:
+    """事件详情不再折叠同题转载：多家报道本身就是覆盖度证据。"""
     conn = connect(tmp_path / "test.db")
     init_db(conn)
     monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
@@ -161,9 +170,7 @@ def test_compose_daily_drops_duplicate_titles_in_theme(tmp_path, monkeypatch) ->
     ]
     composition = compose_daily(conn, Config(), items, now=NOW)
 
-    titles = [item["doc"]["title"] for item in composition.blocks[0].items]
-    assert len(titles) == 2
-    assert len(set(titles)) == 2
+    assert len(composition.events[0].items) == 3
 
 
 def test_theme_rotation_prefers_deficit_within_band(tmp_path, monkeypatch) -> None:
@@ -189,30 +196,11 @@ def test_theme_rotation_prefers_deficit_within_band(tmp_path, monkeypatch) -> No
 
     assert composition.theme is not None
     assert composition.theme_dimension == DIM_8
-    titles = [item["doc"]["title"] for item in composition.blocks[0].items]
+    titles = [item["doc"]["title"] for item in composition.theme.items]
     assert all("Claude" in title for title in titles)
 
 
-def test_briefs_use_rotation_weights(tmp_path, monkeypatch) -> None:
-    conn = connect(tmp_path / "test.db")
-    init_db(conn)
-    monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
-
-    items = [
-        entry(1, "blog", "独立话题甲", 0.80, tag=DIM_1),
-        entry(2, "blog", "独立话题乙", 0.78, tag=DIM_8),
-    ]
-    rotation = RotationStub(item_weights={DIM_1: 0.8, DIM_8: 1.2})
-
-    composition = compose_daily(conn, Config(), items, now=NOW, size=1, rotation=rotation)
-
-    assert composition.theme is None
-    assert [block.section for block in composition.blocks] == ["brief"]
-    # 分数略低但维度赤字更大的条目被抬上来
-    assert composition.blocks[0].items[0]["doc"]["id"] == 2
-
-
-def test_briefs_do_not_repeat_theme_news(tmp_path, monkeypatch) -> None:
+def test_event_items_do_not_repeat_across_events(tmp_path, monkeypatch) -> None:
     conn = connect(tmp_path / "test.db")
     init_db(conn)
     monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
@@ -224,14 +212,16 @@ def test_briefs_do_not_repeat_theme_news(tmp_path, monkeypatch) -> None:
         entry(4, "blog", "另一条中文快讯", 0.70, tag="2 训练与对齐"),
     ]
 
-    composition = compose_daily(conn, Config(), items, now=NOW, size=4)
+    composition = compose_daily(conn, Config(), items, now=NOW)
 
+    document_ids = [item["doc"]["id"] for item in composition.items]
+    assert len(document_ids) == len(set(document_ids))
     titles = [item["doc"]["title"] for item in composition.items]
-    assert sum("JEV" in title for title in titles) == 2
     assert "另一条中文快讯" in titles
 
 
-def test_compose_daily_falls_back_to_briefs_without_theme(tmp_path, monkeypatch) -> None:
+def test_compose_daily_keeps_events_without_theme(tmp_path, monkeypatch) -> None:
+    """没有主线时也不能空白：每个独立内容都成为单篇事件。"""
     conn = connect(tmp_path / "test.db")
     init_db(conn)
     monkeypatch.setattr("ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {})
@@ -243,8 +233,8 @@ def test_compose_daily_falls_back_to_briefs_without_theme(tmp_path, monkeypatch)
     ]
     composition = compose_daily(conn, Config(), items, now=NOW)
     assert composition.theme is None
-    assert [block.section for block in composition.blocks] == ["brief"]
-    assert 1 <= len(composition.items) <= 3
+    assert len(composition.events) == 3
+    assert len(composition.items) == 3
 
 
 def test_compose_weekly_picks_papers_and_repos(tmp_path) -> None:

@@ -118,3 +118,21 @@ def topic_document_ids(conn: sqlite3.Connection, topic_id: int) -> set[int]:
         "SELECT document_id FROM topic_items WHERE topic_id = ?", (topic_id,)
     ).fetchall()
     return {int(row["document_id"]) for row in rows}
+
+
+def get_topic(conn: sqlite3.Connection, topic_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM topics WHERE id = ?", (topic_id,)).fetchone()
+
+
+def topic_items(conn: sqlite3.Connection, topic_id: int) -> list[sqlite3.Row]:
+    """事件下的文章（按 rank），字段与 documents 对齐，供二级卡片渲染。"""
+    return conn.execute(
+        """
+        SELECT ti.rank AS item_rank, ti.angle, d.*
+        FROM topic_items ti
+        JOIN documents d ON d.id = ti.document_id
+        WHERE ti.topic_id = ?
+        ORDER BY ti.rank
+        """,
+        (topic_id,),
+    ).fetchall()

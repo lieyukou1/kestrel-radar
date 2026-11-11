@@ -30,8 +30,8 @@ MAX_TAG_DOCS = 12
 MAX_TAG_ABSTRACT = 320
 # 推送前的候选闸门只看分数最高的一批，条数比重打标多，单独给上限。
 MAX_SCREEN_DOCS = 30
-# 事件切分输入：最多几个粗分组；更多分组对当天日报没有意义。
-MAX_SEGMENT_BUCKETS = 8
+# 事件切分输入：最多几个粗分组；事件优先后要覆盖更多实体，20 个桶约 160 条标题。
+MAX_SEGMENT_BUCKETS = 20
 # 模型只允许用这两个理由剔除内容；其他理由不认，避免「今天心情不好」式的自由发挥。
 _SCREEN_REASONS = {"promotional", "off_topic"}
 

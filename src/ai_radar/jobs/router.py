@@ -10,10 +10,12 @@ import json
 import threading
 from datetime import timedelta
 
+from ..adapters.notify.base import DigestItemView, EventView
 from ..adapters.notify.feishu import (
     KB_PAGE_SIZE,
     build_compare_card,
     build_detail_card,
+    build_event_detail_card,
     build_kb_card,
     build_qa_fallback_card,
     build_reason_card,
@@ -22,7 +24,7 @@ from ..adapters.notify.feishu import (
     build_topic_card,
 )
 from ..config import AppConfig
-from ..pipeline import link_ingest, qa
+from ..pipeline import link_ingest, qa, signals
 from ..pipeline.compare import compare_documents, find_related
 from ..pipeline.intent import parse_intent
 from ..pipeline.interactions import DISLIKE_REASONS, format_status, handle_action
@@ -208,6 +210,8 @@ class MessageRouter:
 
     def respond(self, result: dict) -> str:
         conn = self.db()
+        if result.get("type") == "event_card":
+            return self.render_event(conn, result)
         if result.get("type") in ("kb_card", "favorites_card"):
             return self.render_library(result)
         if result.get("type") == "related_card":
@@ -270,6 +274,53 @@ class MessageRouter:
         text = str(result.get("text") or "")
         self.notifier.send_text(text)
         return text[:60]
+
+    # ---------- 事件视图 ----------
+
+    def render_event(self, conn, result: dict) -> str:
+        """二级卡片：点「详情」后补发这条事件的文章列表。"""
+        event_id = int(result.get("event_id") or 0)
+        topic = repo.get_topic(conn, event_id)
+        if topic is None:
+            self.notifier.send_text("事件不存在或已过期。")
+            return "事件不存在"
+        digest_date = str(result.get("digest_date") or topic["topic_date"] or "")
+        view_items: list[DigestItemView] = []
+        for index, row in enumerate(repo.topic_items(conn, event_id), start=1):
+            document_id = int(row["id"])
+            target = repo.discussion_target(conn, document_id)
+            view_items.append(
+                DigestItemView(
+                    rank=index,
+                    document_id=document_id,
+                    title=str(row["title"] or ""),
+                    url=str(row["url"] or ""),
+                    tag=str(row["primary_tag"] or ""),
+                    source=str(row["kind"] or ""),
+                    reason=signals.heat_label(conn, document_id),
+                    score=0.0,
+                    discussion_url=target[0] if target else None,
+                    discussion_label=target[1] if target else "",
+                    section="event",
+                    published_at=row["published_at"],
+                )
+            )
+        event = EventView(
+            event_id=event_id,
+            rank=1,
+            label=str(topic["label"] or ""),
+            why=str(topic["summary"] or ""),
+            entity=str(topic["entity"] or ""),
+            item_count=len(view_items),
+            source_count=0,
+            score=float(topic["score"] or 0),
+            day_index=int(topic["day_index"] or 1),
+            new_count=int(topic["new_count"] or 0),
+            when=str(topic["event_date"] or ""),
+            items=view_items,
+        )
+        self.notifier.send_card(build_event_detail_card(event, digest_date=digest_date))
+        return f"该事件共 {len(view_items)} 篇"
 
     # ---------- 知识库视图 ----------
 

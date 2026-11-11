@@ -1,12 +1,9 @@
 """日报 / 周报的编排。
 
 日报（每个工作日）：
-  1. 从已切好的事件里取分数最高的 1 个当主线（事件由 events.py + 模型切分，
-     「跨来源」已从成立条件降级为打分项，同一来源连发多条也能成题）；
-  2. 主线内挑 2-3 条不同角度的内容，论文/仓库各最多 1 条充当背景；
-  3. 其余事件各挑 1 条组成「其他进展」，只呈现、不抢主线；
-  4. 补若干「快讯」，只取中文媒体与论坛，保证当天热度；有爆款则单独成块；
-  5. 只有模型明确判定「这些内容不是一件事」时才降级成「无主线」，不硬凑。
+  1. 以「事件」为展示单位：主线排第一，其余事件按分数排在后面，最多 12 个；
+  2. 每个事件的详情保留全部成员（同题转载折叠），不再单独切「快讯」；
+  3. 单篇事件（只有 1 篇文章）同样算事件，排在末尾，保证任何一天都有东西可看。
 
 周报（周一）：
   论文 3 篇 + 仓库 2 个，按「发酵后的热度」而不是发布新鲜度排序。
@@ -20,8 +17,11 @@ from rapidfuzz import fuzz
 
 from ..store import repo
 from ..util import parse_iso, utcnow
-from . import embedding, events, rank, signals, topics
+from . import embedding, events, signals
 from .entity_conflict import titles_conflict
+
+# 一个事件的详情最多展示几篇，避免单个热点刷屏。
+EVENT_MAX_ITEMS = 6
 
 
 @dataclass(slots=True)
@@ -34,15 +34,19 @@ class Block:
 @dataclass(slots=True)
 class Composition:
     kind: str
-    blocks: list[Block]
-    theme: topics.Topic | None = None
+    blocks: list[Block] = field(default_factory=list)
+    # 一级展示单位：事件列表（已有的排序结果）
+    events: list[events.Event] = field(default_factory=list)
+    theme: events.Event | None = None
     theme_reason: str = ""
     theme_dimension: str = ""
-    # 主线之外的事件：用于跨天跟踪与「其他进展」分区
+    # 主线之外的事件：用于跨天跟踪与「其他进展」标注
     progress: list[events.Event] = field(default_factory=list)
 
     @property
     def items(self) -> list[dict]:
+        if self.events:
+            return [item for event in self.events for item in event.items]
         return [item for block in self.blocks for item in block.items]
 
 
@@ -68,25 +72,7 @@ def _age_hours(entry: dict, now) -> float:
     return max(0.0, (now - published).total_seconds() / 3600)
 
 
-def _is_blockbuster(conn, entry: dict, config: dict) -> bool:
-    gates = config.get("blockbuster") or {}
-    kind = _kind(entry)
-    if kind == "repo":
-        trend = signals.repo_trend(conn, _doc_id(entry))
-        return trend["stars_per_day"] >= float(gates.get("repo_stars_per_day", 500))
-    rows = repo.latest_signals(conn, _doc_id(entry))
-    if not rows:
-        return False
-    row = rows[0]
-    source = str(row["source_id"])
-    if source == "hackernews":
-        return int(row["points"] or 0) >= int(gates.get("hn_points", 300))
-    if source == "hf_daily":
-        return int(row["points"] or 0) >= int(gates.get("hf_upvotes", 120))
-    return False
-
-
-def _topic_dimension(topic: topics.Topic) -> str:
+def _topic_dimension(topic: events.Event) -> str:
     """主线的维度取成员里出现最多的那个；平票时看谁的高分条目更高。"""
     counts: dict[str, int] = {}
     best: dict[str, float] = {}
@@ -99,24 +85,27 @@ def _topic_dimension(topic: topics.Topic) -> str:
     return max(counts, key=lambda tag: (counts[tag], best[tag]))
 
 
-def topic_dimension(topic: topics.Topic) -> str:
+def topic_dimension(topic: events.Event) -> str:
     """对外暴露：重打标后需要重新计算主线维度。"""
     return _topic_dimension(topic)
 
 
 def _pick_theme(
-    found: list[topics.Topic],
+    found: list[events.Event],
     rotation,
     band: float,
     theme_pref: dict | None = None,
     blocked: frozenset[str] | set[str] | None = None,
-) -> topics.Topic | None:
+) -> events.Event | None:
     """先看头名，再在 85% 分带内按主线赤字挑一个：不为了轮转去推明显冷门的话题。
 
     `blocked` 里是事件 key：被模型否决、或确认是重复回放的事件不再参与挑选。
     """
     blocked = blocked or set()
-    strong = [topic for topic in found if topic.key not in blocked]
+    # 单篇事件可以展示，但不能当主线：主线必须真的是「多篇在讲同一件事」。
+    strong = [
+        topic for topic in found if topic.key not in blocked and len(topic.items) >= 2
+    ]
     if not strong:
         return None
     # 用户用自然语言指定了主题：只在命中的主线里挑，没有命中再退回常规逻辑。
@@ -135,7 +124,7 @@ def _pick_theme(
     )
 
 
-def _topic_matches(topic: topics.Topic, theme_pref: dict) -> bool:
+def _topic_matches(topic: events.Event, theme_pref: dict) -> bool:
     dimension = theme_pref.get("dimension")
     if dimension and _topic_dimension(topic) == dimension:
         return True
@@ -151,7 +140,7 @@ def _topic_matches(topic: topics.Topic, theme_pref: dict) -> bool:
     return False
 
 
-def theme_pref_matches(topic: topics.Topic, theme_pref: dict | None) -> bool:
+def theme_pref_matches(topic: events.Event, theme_pref: dict | None) -> bool:
     """对外暴露：这条主线是否来自用户设定的临时主题。"""
     return bool(theme_pref) and _topic_matches(topic, theme_pref or {})
 
@@ -177,41 +166,13 @@ def _duplicate_of(entry: dict, others: list[dict], vectors: dict[int, list[float
     return False
 
 
-def _theme_items(
-    topic: topics.Topic, *, limit: int, vectors: dict[int, list[float]] | None = None
-) -> list[dict]:
-    """主线内选条目：论文 / 仓库各最多 1 条，其余留给媒体与讨论。
-
-    同一件事常被多个公众号重复报道，标题几乎一样；这类重复不该占主线席位，
-    否则「3 条主线」看着热闹，其实是同一条新闻。
-    """
-    vectors = vectors or {}
-    picked: list[dict] = []
-    paper_used = repo_used = False
-    for entry in topics.pick_theme_items(topic, max_items=limit * 3):
-        if _duplicate_of(entry, picked, vectors):
-            continue
-        kind = _kind(entry)
-        if kind == "paper" and paper_used:
-            continue
-        if kind == "repo" and repo_used:
-            continue
-        picked.append(entry)
-        paper_used = paper_used or kind == "paper"
-        repo_used = repo_used or kind == "repo"
-        if len(picked) >= limit:
-            break
-    return picked
-
-
 def compose_daily(
     conn,
     config,
     scored: list[dict],
     *,
     now=None,
-    size: int = 5,
-    theme_limit: int = 3,
+    size: int = 12,
     rotation=None,
     theme_pref: dict | None = None,
     blocked_keys: set[str] | frozenset[str] | None = None,
@@ -220,20 +181,18 @@ def compose_daily(
     progress_events: int = 2,
     sources_map: dict[int, set[str]] | None = None,
 ) -> Composition:
-    """编排日报：一个事件当主线，另有 0-2 个事件当「其他进展」，其余进快讯。
+    """编排日报：主线排第一，其余事件按分数补齐到 `size` 个。
 
-    `found_events` 由调用方传入（模型切分后的结果）；不传时按实体粗分组兜底，
-    这样单测和离线环境仍然能跑，不会因为少一次模型调用就完全没主线。
+    `found_events` 由调用方传入（模型切分 + 单篇事件）；不传时按实体粗分组兜底，
+    保证单测和离线环境仍能产出事件列表，不会因为少一次模型调用就空手。
     """
     now = now or utcnow()
     weights = config.weights
     cfg = weights.get("topics") or {}
     rotation_cfg = weights.get("rotation") or {}
-    max_per_tag = int((weights.get("selection") or {}).get("max_per_tag", 3))
 
     pool = sorted(scored, key=lambda item: float(item["score"]), reverse=True)
     topic_pool = pool[: int(cfg.get("pool", 180))]
-    vectors = embedding.ensure_vectors(conn, [_doc_id(entry) for entry in topic_pool])
     if found_events is None:
         buckets = events.group_buckets(
             topic_pool,
@@ -249,9 +208,22 @@ def compose_daily(
             authority_weights=weights.get("authority"),
             now=now,
         )
+        used = {int(item["doc"]["id"]) for event in found for item in event.items}
+        found.extend(
+            events.standalone_events(
+                topic_pool,
+                used_ids=used,
+                sources_map=sources_map,
+                authority_weights=weights.get("authority"),
+                now=now,
+                limit=int(cfg.get("standalone", 40)),
+                min_score=float(cfg.get("standalone_min_score", 0.5)),
+            )
+        )
+        found.sort(key=lambda event: event.score, reverse=True)
     else:
         found = list(found_events)
-    # allow_theme=False 用于「模型判定不成主线」后的降级：条目直接回流到突发/快讯池。
+
     theme = (
         _pick_theme(
             found,
@@ -264,77 +236,33 @@ def compose_daily(
         else None
     )
 
-    blocks: list[Block] = []
-    chosen: list[dict] = []
-    progress: list[events.Event] = []
-    if theme is not None:
-        theme_items = _theme_items(theme, limit=theme_limit, vectors=vectors)
-        blocks.append(Block(section="theme", title="今日主线", items=theme_items))
-        chosen.extend(theme_items)
-
-    # 其他进展：每个次级事件只放一条代表，保证「有关联但不抢主线」。
-    if theme is not None:
-        blocked = set(blocked_keys or set())
-        progress_items: list[dict] = []
-        for event in found:
-            if event is theme or event.key in blocked or not event.items:
-                continue
-            best = max(event.items, key=lambda item: float(item["score"]))
-            if any(best is picked for picked in chosen):
-                continue
-            if _duplicate_of(best, chosen, vectors):
-                continue
-            progress.append(event)
-            progress_items.append(best)
-            chosen.append(best)
-            if len(progress) >= progress_events:
-                break
-        if progress_items:
-            blocks.append(Block(section="progress", title="其他进展", items=progress_items))
-
-    # 爆款插队：从剩下的条目里找一条，单独成块
-    breaking: list[dict] = []
-    for entry in pool:
-        if any(entry is picked for picked in chosen):
-            continue
-        if _is_blockbuster(conn, entry, weights):
-            breaking.append(entry)
+    ordered: list[events.Event] = []
+    for event in found:
+        if len(ordered) >= size:
             break
-    if breaking:
-        blocks.append(Block(section="breaking", title="突发", items=breaking))
-        chosen.extend(breaking)
+        if not event.items:
+            continue
+        ordered.append(event)
+    # 主线排第一，其余按事件分排序；单篇事件分数天然低，自然落在末尾。
+    ordered.sort(key=lambda event: (event is not theme, -event.score))
 
-    # 快讯只取中文媒体与论坛，不塞论文和仓库；
-    # 已经在主线/突发里出现过的同一件事，也不能换个位置再出现一次。
-    brief_pool = [
-        entry
-        for entry in pool
-        if _kind(entry) in ("blog", "forum")
-        and not any(entry is picked for picked in chosen)
-        and not _duplicate_of(entry, chosen, vectors)
-    ]
-    room = max(0, size - len(chosen))
-    tag_weights = (
-        {tag: stat.weight for tag, stat in rotation.stats.items()}
-        if rotation is not None and rotation.active
-        else None
+    displayed: list[events.Event] = []
+    for event in ordered:
+        event.items = event.items[:EVENT_MAX_ITEMS]
+        if event.items:
+            displayed.append(event)
+    if theme is not None and theme not in displayed:
+        theme = None
+    progress = (
+        [event for event in displayed if event is not theme][:progress_events]
+        if theme is not None
+        else []
     )
-    briefs = rank._select(
-        brief_pool,
-        size=room,
-        max_per_tag=max_per_tag,
-        mmr_lambda=float((weights.get("selection") or {}).get("mmr_lambda", 0.7)),
-        base=chosen,
-        tag_weights=tag_weights,
-    )
-    if briefs:
-        blocks.append(Block(section="brief", title="快讯", items=briefs))
 
     return Composition(
         kind="daily",
-        blocks=blocks,
+        events=displayed,
         theme=theme,
-        theme_reason="" if theme is None else "跨来源讨论形成的当日主线",
         theme_dimension=_topic_dimension(theme) if theme is not None else "",
         progress=progress,
     )

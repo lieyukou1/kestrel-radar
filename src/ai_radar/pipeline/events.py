@@ -120,9 +120,11 @@ def score_items(
     authority_weights: dict | None = None,
     now: datetime | None = None,
 ) -> tuple[float, int]:
-    """事件分：来源多样性 > 条数 > 权威 > 新鲜度 > 单篇最高分。
+    """事件分：覆盖度 > 条数 > 权威 > 新鲜度 > 单篇最高分。
 
-    跨来源从「成立条件」降级为「加权项」，同源连发多条的好事件也能成题。
+    覆盖度不是「几个来源」的硬门槛：同一来源的第二篇起按半条折半计入。
+    头部媒体一天连发 4 篇，本身就是「这事很大」的信号，不能因为只有一个来源
+    就被「两路各发 1 条」的普通事件压下去。
     """
     sources_map = sources_map or {}
     authority_weights = authority_weights or {}
@@ -133,14 +135,15 @@ def score_items(
     # 没有来源映射时（测试/离线）退回内容类型，至少不把多类型事件算成单来源。
     if source_count == 0:
         source_count = len({str(item["doc"]["kind"]) for item in items})
+    reach = source_count + 0.5 * max(0, len(items) - source_count)
     authority = max(
         float(authority_weights.get(str(item["doc"]["authority"]), 0.3))
         for item in items
     )
     best = max(float(item["score"]) for item in items)
     score = (
-        0.35 * min(1.0, source_count / 3)
-        + 0.25 * min(1.0, len(items) / 3)
+        0.30 * min(1.0, reach / 3)
+        + 0.30 * min(1.0, len(items) / 3)
         + 0.20 * authority
         + 0.10 * _recency_share(items, now)
         + 0.10 * best
@@ -156,7 +159,7 @@ def group_buckets(
     now: datetime | None = None,
     min_members: int = 2,
     entity_max_docs: int = 12,
-    max_buckets: int = 8,
+    max_buckets: int = 20,
     max_items: int = 8,
 ) -> list[Bucket]:
     """按实体粗分组；一条内容只归到最具体的实体，避免一稿多桶。"""
@@ -288,6 +291,62 @@ def build_events(
         used.update(_doc_id(entry) for entry in chosen)
     events.sort(key=lambda event: event.score, reverse=True)
     return events
+
+
+def standalone_events(
+    entries: list[dict],
+    *,
+    used_ids: set[int] | None = None,
+    sources_map: dict[int, set[str]] | None = None,
+    authority_weights: dict | None = None,
+    now: datetime | None = None,
+    limit: int = 40,
+    min_score: float = 0.5,
+    kinds: tuple[str, ...] = ("blog", "forum"),
+) -> list[Event]:
+    """没归进任何事件的内容，各自算一个「单篇事件」。
+
+    以前这些内容会掉进「快讯」或者干脆不显示；现在它们也是事件，只是分数低、
+    排在末尾。这样一级列表永远是满的，不会因为聚类弱就整天空白。
+
+    论文与仓库不参与单篇事件：它们属于周报，日推只收新闻与讨论，
+    否则 arXiv 每天几十篇会把事件列表挤满，也会把周报的候选提前消耗掉。
+    """
+    used_ids = used_ids or set()
+    singles: list[Event] = []
+    ordered = sorted(entries, key=lambda item: float(item["score"]), reverse=True)
+    for entry in ordered:
+        if len(singles) >= limit:
+            break
+        document_id = _doc_id(entry)
+        if document_id in used_ids or float(entry["score"]) < min_score:
+            continue
+        if str(entry["doc"]["kind"]) not in kinds:
+            continue
+        title = str(entry["doc"]["title"] or "").strip()
+        if not title:
+            continue
+        names = entities.extract(title)
+        entity = max(names, key=len) if names else ""
+        score, source_count = score_items(
+            [entry],
+            sources_map=sources_map,
+            authority_weights=authority_weights,
+            now=now,
+        )
+        singles.append(
+            Event(
+                # 单篇事件的键带上文档 id：同一天同一产品的两条独立新闻不能互相认亲。
+                key=f"{entity or 'misc'}|{action_of(title)}|doc{document_id}",
+                label=title[:40],
+                entity=entity,
+                items=[entry],
+                entities={entity} if entity else set(),
+                score=score,
+                source_count=source_count,
+            )
+        )
+    return singles
 
 
 def fallback_events(

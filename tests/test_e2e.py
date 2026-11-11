@@ -62,7 +62,7 @@ def test_collect_normalize_and_digest(tmp_path: Path) -> None:
         now=now,
     )
 
-    # 日报只推中文媒体与论坛：论文不再每天占位，未聊过天的独立论文不进日报。
+    # 日报只推中文媒体与论坛：论文不单独占位（单篇事件也排除 paper/repo）。
     assert result["count"] == 1
     outbox = Path(result["outbox"])
     assert outbox.exists()

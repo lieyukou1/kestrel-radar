@@ -229,6 +229,16 @@ def handle_action(conn: sqlite3.Connection, value: dict) -> dict:
     document_id = int(value.get("document_id") or 0)
     digest_date = value.get("digest_date")
 
+    if action == "event_detail":
+        event_id = int(value.get("event_id") or 0)
+        if event_id <= 0 or repo.get_topic(conn, event_id) is None:
+            return {"type": "text", "text": "事件不存在或已过期。"}
+        return {
+            "type": "event_card",
+            "event_id": event_id,
+            "digest_date": str(digest_date or ""),
+        }
+
     if action == "topic_search":
         query = " ".join(str(value.get("query") or "").split())
         if len(query) < 2:

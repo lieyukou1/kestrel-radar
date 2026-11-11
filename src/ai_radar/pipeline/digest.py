@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 
-from ..adapters.notify.base import DigestItemView, Notifier
+from ..adapters.notify.base import DigestItemView, EventView, Notifier
 from ..adapters.search_news import search_news
 from ..adapters.url_safety import is_public_http_url
 from ..config import AppConfig
@@ -78,6 +78,9 @@ EVENT_SEARCH_LIMIT = 30
 ECHO_MIN_DAYS = 3
 # 事件时间拿不全时，同实体在这段时间内开过主线，先按回声处理。
 ECHO_WINDOW_DAYS = 7
+# 推断出的事件时间比材料最早报道日还早这么多天，就认为它指向更早的源头，
+# 不算「本轮」——否则卡片上会出现「文章发于昨天，事件时间却是去年」。
+EVENT_DATE_MAX_LAG_DAYS = 30
 
 
 def _cached_event_date(conn: sqlite3.Connection, label: str) -> tuple[str, str] | None:
@@ -121,6 +124,7 @@ def _deliver(
     theme_when: str = "",
     theme_when_note: str = "",
     preview: bool = False,
+    events: list[EventView] | None = None,
 ) -> str:
     try:
         return notifier.send_digest(
@@ -133,6 +137,7 @@ def _deliver(
             theme_when=theme_when,
             theme_when_note=theme_when_note,
             preview=preview,
+            events=events,
         )
     except Exception as exc:
         repo.mark_digest_failed(conn, digest_id, f"{type(exc).__name__}: {exc}")
@@ -623,11 +628,21 @@ def _screen_candidates(
         print("[digest] screen skipped: no verdicts", flush=True)
         return scored, {}, stats
 
-    dropped = {
-        document_id
-        for document_id, verdict in verdicts.items()
-        if not verdict.get("keep", True)
-    }
+    # 一手发布（厂商官方博客）常被模型当成软文：这类只豁免 promotional，
+    # off_topic 照剔——官方博客里的游戏/汽车内容同样不该进日报。
+    official = {str(item) for item in cfg.get("official_sources") or []}
+    sources_map = repo.document_sources_map(conn) if official else {}
+    dropped: set[int] = set()
+    exempted: set[int] = set()
+    for document_id, verdict in verdicts.items():
+        if verdict.get("keep", True):
+            continue
+        reason = str(verdict.get("reason") or "")
+        doc_sources = sources_map.get(document_id) or set()
+        if reason == "promotional" and doc_sources & official:
+            exempted.add(document_id)
+            continue
+        dropped.add(document_id)
     max_drop = int(len(head) * float(cfg.get("max_drop_ratio", SCREEN_MAX_DROP_RATIO)))
     if len(dropped) > max_drop:
         print(f"[digest] screen ignored: dropped {len(dropped)}/{len(head)}", flush=True)
@@ -641,6 +656,10 @@ def _screen_candidates(
             "reason": verdicts[document_id].get("reason", ""),
         }
         for document_id in sorted(dropped)
+    ]
+    stats["exempted"] = [
+        {"id": document_id, "title": titles.get(document_id, "")}
+        for document_id in sorted(exempted)
     ]
     dimensions = {
         document_id: verdict["dimension"]
@@ -716,7 +735,7 @@ def _apply_theme_label(
         return ThemeLabel(why=note)
     titles = _theme_material_lines(theme)
     fallback = (theme.label, f"围绕「{theme.label}」的讨论同时在多个来源出现。")
-    if llm is None:
+    if llm is None or not callable(getattr(llm, "label_theme", None)):
         return ThemeLabel(label=fallback[0], why=fallback[1])
     try:
         data = llm.label_theme(conn, titles, history=history)
@@ -744,27 +763,48 @@ def _apply_theme_label(
 def _infer_event_date(
     theme, llm: DeepSeekLLM | None, conn: sqlite3.Connection, config: AppConfig | None
 ) -> tuple[str, str]:
-    """给事件补一个「事情本身发生的时间」；拿不到就返回空，不拿发布日期充数。"""
+    """给事件补一个「事情本身发生的时间」；拿不到就返回空，不拿发布日期充数。
+
+    推断值如果比材料最早报道日还早出 EVENT_DATE_MAX_LAG_DAYS 天，说明它指的是
+    这件事的源头而不是本轮进展，按本轮最早报道日计，避免卡片上出现「去年的事」。
+
+    代价：入库的事件时间也一并被压到本轮，`_echo_of` 按事件时间判回声时会把它
+    当成「时间往前走了」的新事件。同一件旧事被媒体重新报道时理论上会重开主线，
+    实际由「30 天内推过的文档不再进候选」兜住，属于有意取舍。
+    """
     proxy = getattr(getattr(config, "network", None), "proxy", None)
+    # 本轮的下界：材料最早报道日。推断出的事件时间比它还早太多，说明指向的是
+    # 「这件事的源头」（去年那轮合作、初版发布），不是这一轮发生了什么。
+    material_day, material_note = _earliest_material_day(theme)
+    floor = _event_day(material_day)
     # 先看原文页面：它离事件最近，新闻转载的日期通常比事件本身晚。
     sourced, source_note = _source_event_date(theme, proxy=proxy)
-    if sourced:
+    if sourced and _belongs_to_round(sourced, floor):
         _store_event_date(conn, theme.label, sourced, source_note)
         return sourced, source_note
     # 原文页面读不到日期，再退回外网检索：用话题实体检索，别用模型起的中文标题。
     searched, note = _search_event_date(llm, conn, theme.label, proxy=proxy)
-    if searched:
+    if searched and _belongs_to_round(searched, floor):
         return searched, note
     # 三者都失败时若写空，回声判定会退化成「上次推送距今 ≤7 天」，旧事超过窗口就会被重推；
     # 退到材料最早报道日（上界），保证新写入的主线一定有事件时间。
-    material_day, material_note = _earliest_material_day(theme)
     if material_day:
         return material_day, material_note
     return "", ""
 
 
-def _fresh_entries(scored: list[dict], *, now: datetime, hours: float = 72.0) -> list[dict]:
-    """事件池：近 72 小时的内容，不受分数排名截断。"""
+def _belongs_to_round(when: str, floor: date | None) -> bool:
+    """推断出的事件时间是不是「本轮」的：比材料最早报道日早太多就不算。"""
+    if floor is None:
+        return True
+    day = _event_day(when)
+    if day is None:
+        return True
+    return day >= floor - timedelta(days=EVENT_DATE_MAX_LAG_DAYS)
+
+
+def _fresh_entries(scored: list[dict], *, now: datetime, hours: float = 96.0) -> list[dict]:
+    """事件池：近 N 小时的内容，不受分数排名截断。"""
     fresh: list[dict] = []
     for entry in scored:
         document = entry["doc"]
@@ -790,8 +830,10 @@ def _found_events(
     weights = config.weights
     cfg = weights.get("topics") or {}
     sources_map = repo.document_sources_map(conn)
-    # 事件池 = 近 72h 全量（不被分数截断）∪ 分数最高的一批（兜住跨天仍在发酵的事件）。
-    fresh = _fresh_entries(scored, now=now)
+    # 事件池 = 近 N 小时全量（不被分数截断）∪ 分数最高的一批（兜住跨天仍在发酵的事件）。
+    fresh = _fresh_entries(
+        scored, now=now, hours=float(cfg.get("event_window_hours", 96))
+    )
     seen = {int(entry["doc"]["id"]) for entry in fresh}
     head = scored[: int(cfg.get("pool", 180))]
     pool_entries = fresh + [
@@ -804,6 +846,7 @@ def _found_events(
         now=now,
         min_members=int(cfg.get("min_members", 2)),
         entity_max_docs=int(cfg.get("max_docs", 12)),
+        max_buckets=int(cfg.get("max_buckets", 20)),
     )
     stats = {"buckets": len(buckets), "events": 0, "source": "fallback"}
     found: list[events.Event] = []
@@ -831,6 +874,20 @@ def _found_events(
             authority_weights=weights.get("authority"),
             now=now,
         )
+    # 单篇事件：没被任何事件收留的内容也各算一件事，保证一级列表不会因为聚类弱而空。
+    used = {int(item["doc"]["id"]) for event in found for item in event.items}
+    singles = events.standalone_events(
+        pool_entries,
+        used_ids=used,
+        sources_map=sources_map,
+        authority_weights=weights.get("authority"),
+        now=now,
+        limit=int(cfg.get("standalone", 40)),
+        min_score=float(cfg.get("standalone_min_score", 0.5)),
+    )
+    found.extend(singles)
+    found.sort(key=lambda event: event.score, reverse=True)
+    stats["standalone"] = len(singles)
     stats["events"] = len(found)
     return found, stats
 
@@ -852,6 +909,22 @@ def _event_continuation(
         new_count,
         str(previous["first_date"] or previous["topic_date"]),
     )
+
+
+def _event_label(event: events.Event) -> str:
+    """展示用标题：模型起的名字优先，兜底事件的实体名换成它最高分那篇的标题。"""
+    label = str(event.label or "").strip()
+    if (
+        label
+        and label != event.entity
+        and not topics.is_bucket_label(label)
+        and not entities.is_venue(label)
+    ):
+        return label
+    if not event.items:
+        return label or event.entity
+    best = max(event.items, key=lambda item: float(item["score"]))
+    return str(best["doc"]["title"] or event.entity).strip()[:40]
 
 
 def _label_event(
@@ -945,8 +1018,7 @@ def build_digest(
             config,
             scored,
             now=now,
-            size=size or int(cadence.get("daily_size", 5)),
-            theme_limit=int(cadence.get("daily_theme_items", 3)),
+            size=size or int(cadence.get("daily_events", 12)),
             rotation=turn,
             theme_pref=theme_pref,
             found_events=found_events or None,
@@ -1039,76 +1111,78 @@ def build_digest(
     if retagged and composition.theme is not None:
         composition.theme_dimension = composer.topic_dimension(composition.theme)
 
-    if composition.theme is not None:
+    # 所有展示的事件都入库：跨天跟踪靠 topic_items 判断「今天有没有新增」。
+    event_topics: dict[int, int] = {}
+    event_meta: dict[int, tuple[str, str, str, int, int]] = {}
+    for event in composition.events:
+        if event is composition.theme:
+            label, summary = theme_label, theme_reason
+            event_when, event_note = theme_when, theme_when_note
+            e_day, e_new, e_first = day_index, new_count, first_date
+            entity = event.entity
+        else:
+            label, summary = _event_label(event), event.why
+            event_when, event_note = event.when, "模型推断" if event.when else ""
+            e_day, e_new, e_first = _event_continuation(conn, event, now.date())
+            # 非主线事件不写实体，避免污染主线回声判定。
+            entity = ""
         topic_id = repo.add_topic(
             conn,
             digest_id=digest_id,
             topic_date=date,
             kind=kind,
-            label=theme_label,
-            summary=theme_reason,
-            entity=composition.theme.entity,
-            dimension=composition.theme_dimension or None,
-            score=composition.theme.score,
-            item_count=len(composition.theme.items),
-            event_date=theme_when,
-            event_key=composition.theme.key,
-            first_date=first_date,
-            day_index=day_index,
-            new_count=new_count,
+            label=label,
+            summary=summary,
+            entity=entity,
+            dimension=composition.theme_dimension if event is composition.theme else None,
+            score=event.score,
+            item_count=len(event.items),
+            event_date=event_when,
+            event_key=event.key,
+            first_date=e_first,
+            day_index=e_day,
+            new_count=e_new,
         )
-        for index, entry in enumerate(composition.theme.items, start=1):
+        event_topics[id(event)] = topic_id
+        event_meta[id(event)] = (label, event_when, event_note, e_day, e_new)
+        for item_rank, entry in enumerate(event.items, start=1):
             repo.add_topic_item(
                 conn,
                 topic_id=topic_id,
                 document_id=int(entry["doc"]["id"]),
                 angle=str(entry["doc"]["kind"]),
-                rank=index,
-            )
-
-    # 其他进展也入库：跨天跟踪靠 topic_items 判断「今天有没有新增」。
-    for event in composition.progress:
-        p_day, p_new, p_first = _event_continuation(conn, event, now.date())
-        progress_topic_id = repo.add_topic(
-            conn,
-            digest_id=digest_id,
-            topic_date=date,
-            kind=kind,
-            label=event.label,
-            summary=event.why,
-            entity="",
-            score=event.score,
-            item_count=len(event.items),
-            event_key=event.key,
-            first_date=p_first,
-            day_index=p_day,
-            new_count=p_new,
-        )
-        for index, entry in enumerate(event.items, start=1):
-            repo.add_topic_item(
-                conn,
-                topic_id=progress_topic_id,
-                document_id=int(entry["doc"]["id"]),
-                angle=str(entry["doc"]["kind"]),
-                rank=index,
+                rank=item_rank,
             )
 
     entries = composition.items
     items: list[DigestItemView] = []
+    event_views: list[EventView] = []
     summaries = 0
     summary_errors: list[str] = []
     discussion_used = 0
     index = 0
     # 摘要前先补抓正文：只有标题的条目模型无从下手，写出来就是「未知」。
     bodies = _prefetch_bodies(config, entries) if llm is not None else {}
-    for block in composition.blocks:
-        for entry in block.items:
+    # 日报按事件分组，周报沿用 block 分组：两种结构在投递前统一成「分组 → 条目」。
+    section_groups: list[tuple[str, events.Event | None, list[dict]]] = []
+    if composition.events:
+        for event in composition.events:
+            section = "theme" if event is composition.theme else "event"
+            section_groups.append((section, event, event.items))
+    else:
+        for block in composition.blocks:
+            section_groups.append((block.section, None, block.items))
+
+    for group_rank, (section, event, group_items) in enumerate(section_groups, start=1):
+        view_items: list[DigestItemView] = []
+        for entry in group_items:
             index += 1
             document = entry["doc"]
             reason = signals.heat_label(conn, int(document["id"]))
             target = repo.discussion_target(conn, int(document["id"]))
             summary: dict = {"abstract": (document["abstract"] or "")[:280]}
-            if llm is not None:
+            # 摘要只给第一组写：展示单位变成事件后，其余文章用原始摘要就够，省调用。
+            if llm is not None and group_rank == 1:
                 body = bodies.get(int(document["id"]))
                 try:
                     generated = llm.summarize(
@@ -1121,6 +1195,7 @@ def build_digest(
                     summary_errors.append(f"{document['id']}: {exc}")
             if (
                 llm is not None
+                and group_rank == 1
                 and document["kind"] == "forum"
                 and discussion_used < MAX_DISCUSSION_ITEMS
             ):
@@ -1140,9 +1215,9 @@ def build_digest(
                 score=float(entry["score"]),
                 reason=reason,
                 summary=summary,
-                section=block.section,
+                section=section,
             )
-            items.append(
+            view_items.append(
                 DigestItemView(
                     rank=index,
                     document_id=int(document["id"]),
@@ -1154,10 +1229,31 @@ def build_digest(
                     score=float(entry["score"]),
                     discussion_url=target[0] if target else None,
                     discussion_label=target[1] if target else "",
-                    section=block.section,
+                    section=section,
                     published_at=document["published_at"],
                 )
             )
+        items.extend(view_items)
+        if event is None:
+            continue
+        label, event_when, event_note, e_day, e_new = event_meta[id(event)]
+        event_views.append(
+            EventView(
+                event_id=event_topics[id(event)],
+                rank=len(event_views) + 1,
+                label=label,
+                why=theme_reason if event is composition.theme else event.why,
+                entity=event.entity,
+                item_count=len(view_items),
+                source_count=event.source_count,
+                score=event.score,
+                day_index=e_day,
+                new_count=e_new,
+                when=event_when,
+                when_note=event_note,
+                items=view_items,
+            )
+        )
 
     # 反刍：日报末尾补一条「值得回看」。预览与失败不写 interactions，
     # 否则会污染「60 天间隔 / 累计 2 次」的状态。
@@ -1195,6 +1291,38 @@ def build_digest(
                         published_at=document["published_at"],
                     )
                 )
+                # 回看也按事件展示：一级列表末尾单独一个「值得回看」。
+                recall_topic_id = repo.add_topic(
+                    conn,
+                    digest_id=digest_id,
+                    topic_date=date,
+                    kind=kind,
+                    label="值得回看",
+                    summary=candidate.reason,
+                    entity="",
+                    score=0.0,
+                    item_count=1,
+                )
+                repo.add_topic_item(
+                    conn,
+                    topic_id=recall_topic_id,
+                    document_id=candidate.document_id,
+                    angle=str(document["kind"]),
+                    rank=1,
+                )
+                event_views.append(
+                    EventView(
+                        event_id=recall_topic_id,
+                        rank=len(event_views) + 1,
+                        label="值得回看",
+                        why=candidate.reason,
+                        entity="",
+                        item_count=1,
+                        source_count=1,
+                        score=0.0,
+                        items=[items[-1]],
+                    )
+                )
 
     if not items:
         location = _deliver(
@@ -1210,6 +1338,7 @@ def build_digest(
             theme_when=theme_when,
             theme_when_note=theme_when_note,
             preview=preview,
+            events=event_views or None,
         )
         repo.mark_digest_sent(conn, digest_id, {"count": 0, "kind": kind, "outbox": location})
         return {"date": date, "status": "sent", "count": 0, "kind": kind, "outbox": location}
@@ -1227,6 +1356,7 @@ def build_digest(
         theme_when=theme_when,
         theme_when_note=theme_when_note,
         preview=preview,
+        events=event_views or None,
     )
     repo.mark_status(conn, [int(entry["doc"]["id"]) for entry in entries], "pushed")
     repo.mark_digest_sent(
@@ -1235,6 +1365,8 @@ def build_digest(
         {
             "count": len(items),
             "kind": kind,
+            "events_count": len(event_views),
+            "articles": len(items),
             "theme": theme_label,
             "theme_when": theme_when,
             "theme_when_note": theme_when_note,
@@ -1266,6 +1398,7 @@ def build_digest(
         "status": "sent",
         "kind": kind,
         "count": len(items),
+        "events_count": len(event_views),
         "theme": theme_label,
         "candidates": candidate_count,
         "screened": screen_stats,

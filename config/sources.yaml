@@ -12,7 +12,7 @@ sources:
     authority: A
     region: overseas
     enabled: true
-    max_results: 50
+    max_results: 80
     categories:
       - cs.AI
       - cs.LG
@@ -57,9 +57,9 @@ sources:
     region: domestic
     enabled: true
     # 每个 feed 各自取这么多条（不再是所有 feed 共享一个上限）
-    max_results: 15
-    # 公众号 feed 会带回几个月前的历史文章，超过 10 天的直接丢掉
-    max_age_days: 10
+    max_results: 30
+    # 公众号 feed 会带回几个月前的历史文章，超过 14 天的直接丢掉
+    max_age_days: 14
     feeds:
       - id: qbitai
         name: 量子位
@@ -155,7 +155,7 @@ sources:
     authority: A
     region: overseas
     enabled: true
-    max_results: 10
+    max_results: 30
     max_age_days: 7
     feeds:
       - id: openai-news
@@ -165,6 +165,19 @@ sources:
       - id: deepmind-blog
         name: Google DeepMind
         url: https://deepmind.google/blog/rss.xml
+        authority: A
+      - id: google-ai-blog
+        name: Google AI Blog
+        # 旧地址 /technology/ai/rss/ 会 301 到新路径，采集端不跟随重定向，直接写死落点
+        url: https://blog.google/innovation-and-ai/technology/ai/rss/
+        authority: A
+      - id: msr-blog
+        name: Microsoft Research
+        url: https://www.microsoft.com/en-us/research/feed/
+        authority: A
+      - id: bair-blog
+        name: BAIR Blog
+        url: https://bair.berkeley.edu/blog/feed.xml
         authority: A
       - id: nvidia-blog
         name: NVIDIA Blog
@@ -180,6 +193,26 @@ sources:
         name: Hugging Face Blog
         url: https://huggingface.co/blog/feed.xml
         authority: A
+
+  # 海外媒体：事件优先需要更多「不同来源」来支撑事件覆盖度。
+  # 三个 feed 本身只发 AI（栏目页/垂直站），不需要再按标题过滤；都走代理。
+  - id: media_en
+    kind: rss
+    name: 海外 AI 媒体
+    authority: B
+    region: overseas
+    enabled: true
+    max_results: 30
+    max_age_days: 7
+    feeds:
+      - id: the-decoder
+        name: The Decoder
+        url: https://the-decoder.com/feed/
+        authority: B
+      - id: techcrunch-ai
+        name: TechCrunch AI
+        url: https://techcrunch.com/category/artificial-intelligence/feed/
+        authority: B
 
   # 社区讨论：Reddit 现在要 OAuth 才能读，本机直连/代理都被 403/429；
   # Lobsters 同样有投票和评论，接口可直连（走代理），用作社区信号。

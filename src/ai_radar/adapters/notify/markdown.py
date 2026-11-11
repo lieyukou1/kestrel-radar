@@ -6,7 +6,40 @@
 
 from __future__ import annotations
 
-from .base import SECTION_TITLES, DigestItemView, parse_published, published_label
+from .base import SECTION_TITLES, DigestItemView, EventView, parse_published, published_label
+
+
+def _render_events(events: list[EventView], reference) -> list[str]:
+    """一级事件列表 + 二级文章明细，离线渠道一次看全。"""
+    lines = [f"## 今日事件（{len(events)}）", ""]
+    for event in events:
+        meta = [f"{event.item_count} 篇"]
+        if event.source_count:
+            meta.append(f"{event.source_count} 来源")
+        if event.day_index > 1:
+            meta.append(f"第 {event.day_index} 天 · 新增 {event.new_count} 条")
+        lines.append(f"### {event.rank}. {event.label}")
+        lines.append("")
+        lines.append(f"- {' · '.join(meta)}")
+        if event.why:
+            lines.append(f"- 理由：{event.why}")
+        lines.append("")
+        for index, item in enumerate(event.items, start=1):
+            lines.append(f"#### {event.rank}.{index} {item.title}")
+            lines.append("")
+            lines.append(f"- 维度：{item.tag}")
+            lines.append(f"- 来源：{item.source}")
+            published = published_label(item.published_at, item.source, reference)
+            if published:
+                lines.append(f"- 发布：{published}")
+            if item.reason:
+                lines.append(f"- 理由：{item.reason}")
+            if item.discussion_url:
+                label = item.discussion_label or "社区"
+                lines.append(f"- 社区讨论（{label}）：{item.discussion_url}")
+            lines.append(f"- 链接：{item.url}")
+            lines.append("")
+    return lines
 
 
 def render_digest(
@@ -19,6 +52,7 @@ def render_digest(
     theme_when: str = "",
     theme_when_note: str = "",
     preview: bool = False,
+    events: list[EventView] | None = None,
 ) -> str:
     title = "Kestrel Radar 周报" if kind == "weekly" else "Kestrel Radar"
     if preview:
@@ -27,6 +61,8 @@ def render_digest(
     reference = parse_published(digest_date)
     if preview:
         lines.extend(["> 预演内容：基于当前候选生成，不会记入已推记录。", ""])
+    if events:
+        return "\n".join(lines + _render_events(events, reference))
     if theme_label:
         lines.extend([f"## {theme_label}", "", theme_reason, ""])
         if theme_when:

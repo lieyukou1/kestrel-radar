@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from ..base import (
     SECTION_TITLES,
     DigestItemView,
+    EventView,
     parse_published,
     published_label,
 )
@@ -233,6 +234,192 @@ def build_digest_card(
             "template": "orange" if preview else ("blue" if kind == "daily" else "indigo"),
         },
         "elements": elements,
+    }
+
+
+def _event_meta(event: EventView) -> str:
+    parts = [f"{event.item_count} 篇"]
+    if event.source_count:
+        parts.append(f"{event.source_count} 来源")
+    if event.day_index > 1:
+        parts.append(f"第 {event.day_index} 天 · 新增 {event.new_count} 条")
+    return " · ".join(parts)
+
+
+def _footer_actions() -> dict:
+    return {
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "知识库"},
+                "type": "primary",
+                "value": {"action": "kb"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "收藏夹"},
+                "type": "default",
+                "value": {"action": "favorites"},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "状态"},
+                "type": "default",
+                "value": {"action": "status"},
+            },
+        ],
+    }
+
+
+def build_event_overview_card(
+    digest_date: str, events: list[EventView], *, preview: bool = False
+) -> dict:
+    """一级卡片：主展示单位是事件，文章只在点开详情后出现。"""
+    elements: list[dict] = []
+    if preview:
+        elements.append(
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "<font color='orange'>预演卡片：基于当前候选生成，不会记入已推记录。</font>",
+                },
+            }
+        )
+    total_items = sum(event.item_count for event in events)
+    elements.append(
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**今日 {len(events)} 个事件 · {total_items} 篇文章**",
+            },
+        }
+    )
+    if not events:
+        elements.append(
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": "今日候选不足，未生成推送。"},
+            }
+        )
+    for event in events:
+        content = (
+            f"**{event.rank}. {_escape_md(event.label)}**\n"
+            f"<font color='grey'>{_event_meta(event)}</font>"
+        )
+        if event.why:
+            content += f"\n{_escape_md(event.why)}"
+        if event.when:
+            note = event.when_note or "模型推断"
+            content += f"\n<font color='grey'>事件时间：{event.when}（{note}）</font>"
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": content}})
+        elements.append(
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "详情"},
+                        "type": "primary",
+                        "value": {
+                            "action": "event_detail",
+                            "event_id": event.event_id,
+                            "digest_date": digest_date,
+                        },
+                    }
+                ],
+            }
+        )
+        elements.append({"tag": "hr"})
+    elements.append(_footer_actions())
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"Kestrel Radar · {digest_date}"},
+            "template": "orange" if preview else "blue",
+        },
+        "elements": elements,
+    }
+
+
+def build_event_detail_card(event: EventView, *, digest_date: str = "") -> dict:
+    """二级卡片：一个事件下的全部文章。"""
+    reference = parse_published(digest_date)
+    elements: list[dict] = [
+        {
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"<font color='grey'>{_event_meta(event)}</font>"},
+        }
+    ]
+    if event.why:
+        elements.append(
+            {"tag": "div", "text": {"tag": "lark_md", "content": _escape_md(event.why)}}
+        )
+    if event.when:
+        note = event.when_note or "模型推断"
+        elements.append(
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"<font color='grey'>事件时间：{event.when}（{note}）</font>",
+                },
+            }
+        )
+    elements.append({"tag": "hr"})
+    for index, item in enumerate(event.items, start=1):
+        content = (
+            f"**{index}. {md_link(item.title, item.url)}**\n"
+            f"<font color='grey'>{meta_line(kind_label(item.source), dimension_name(item.tag), published_label(item.published_at, item.source, reference), item.reason)}</font>"
+        )
+        if item.discussion_url:
+            label = item.discussion_label or discussion_label_for(item.discussion_url)
+            content += f"\n[社区讨论（{label}）]({item.discussion_url})"
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": content}})
+        elements.append(
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "收藏"},
+                        "type": "default",
+                        "value": {
+                            "action": "save",
+                            "document_id": item.document_id,
+                            "digest_date": digest_date,
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "不感兴趣"},
+                        "type": "default",
+                        "value": {
+                            "action": "dislike",
+                            "document_id": item.document_id,
+                            "digest_date": digest_date,
+                        },
+                    },
+                ],
+            }
+        )
+        elements.append({"tag": "hr"})
+    elements.append(_footer_actions())
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"事件详情 · {event.rank}"},
+            "template": "indigo",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": f"**{_escape_md(event.label)}**"},
+            },
+            *elements,
+        ],
     }
 
 

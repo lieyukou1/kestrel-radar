@@ -36,12 +36,15 @@ class Scheduler:
         config: AppConfig,
         notifier: Notifier,
         *,
-        collect_interval: timedelta = COLLECT_INTERVAL,
+        collect_interval: timedelta | None = None,
         digest_hour: int = DIGEST_HOUR,
     ) -> None:
         self.config = config
         self.notifier = notifier
-        self.collect_interval = collect_interval
+        cadence = (getattr(config, "weights", {}) or {}).get("cadence") or {}
+        self.collect_interval = collect_interval or timedelta(
+            minutes=float(cadence.get("collect_minutes", COLLECT_INTERVAL.total_seconds() / 60))
+        )
         self.digest_hour = digest_hour
         self._last_collect_attempt: datetime | None = None
         self._last_push_attempt: datetime | None = None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
@@ -35,6 +35,25 @@ class DigestItemView:
     followed: bool = False
     # 原文发布日期：论文/讨论/媒体必须展示，否则旧内容会被当成新闻
     published_at: str | None = None
+
+
+@dataclass(slots=True)
+class EventView:
+    """一级展示单位：一个事件，而不是一篇文章。"""
+
+    event_id: int
+    rank: int
+    label: str
+    why: str
+    entity: str
+    item_count: int
+    source_count: int
+    score: float
+    day_index: int = 1
+    new_count: int = 0
+    when: str = ""
+    when_note: str = ""
+    items: list[DigestItemView] = field(default_factory=list)
 
 
 def parse_published(value) -> date | None:
@@ -92,6 +111,7 @@ class Notifier(Protocol):
         theme_when: str = "",
         theme_when_note: str = "",
         preview: bool = False,
+        events: list[EventView] | None = None,
     ) -> str: ...
 
     def send_text(self, text: str) -> str: ...

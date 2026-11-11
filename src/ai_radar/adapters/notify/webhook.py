@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from .base import DigestItemView
+from .base import DigestItemView, EventView
 from .markdown import card_to_text, render_digest
 
 SUPPORTED_FORMATS = ("generic", "slack", "discord", "dingtalk", "feishu")
@@ -81,6 +81,7 @@ class WebhookNotifier:
         theme_when: str = "",
         theme_when_note: str = "",
         preview: bool = False,
+        events: list[EventView] | None = None,
     ) -> str:
         text = render_digest(
             digest_date,
@@ -91,6 +92,7 @@ class WebhookNotifier:
             theme_when=theme_when,
             theme_when_note=theme_when_note,
             preview=preview,
+            events=events,
         )
         title = "Kestrel Radar 周报" if kind == "weekly" else "Kestrel Radar"
         return self._post(build_payload(self.format, text, title=title))

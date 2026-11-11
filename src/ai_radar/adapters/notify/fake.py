@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .base import DigestItemView
+from .base import DigestItemView, EventView
 from .markdown import card_to_text, render_digest
 
 
@@ -24,6 +24,7 @@ class FakeNotifier:
         theme_when: str = "",
         theme_when_note: str = "",
         preview: bool = False,
+        events: list[EventView] | None = None,
     ) -> str:
         self.outbox_dir.mkdir(parents=True, exist_ok=True)
         suffix = "weekly" if kind == "weekly" else "daily"
@@ -37,6 +38,7 @@ class FakeNotifier:
             theme_when=theme_when,
             theme_when_note=theme_when_note,
             preview=preview,
+            events=events,
         )
         path.write_text(content, encoding="utf-8")
         return str(path)

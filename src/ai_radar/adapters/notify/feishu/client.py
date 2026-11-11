@@ -6,8 +6,8 @@ import time
 import httpx
 
 from ....config import FeishuConfig
-from ..base import DigestItemView
-from .cards import build_digest_card
+from ..base import DigestItemView, EventView
+from .cards import build_digest_card, build_event_overview_card
 
 
 class FeishuError(RuntimeError):
@@ -116,7 +116,12 @@ class FeishuNotifier:
         theme_when: str = "",
         theme_when_note: str = "",
         preview: bool = False,
+        events: list[EventView] | None = None,
     ) -> str:
+        if events:
+            return self.send_card(
+                build_event_overview_card(digest_date, events, preview=preview)
+            )
         return self.send_card(
             build_digest_card(
                 digest_date,

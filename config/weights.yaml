@@ -46,9 +46,14 @@ maturity_hours:
 
 # 节奏：周一发周报（论文 + 仓库），周二到周五发日报，周末不推
 cadence:
-  daily_size: 5
-  # 日报里主线话题最多占几席，剩下的给快讯
+  # 一级每天展示多少个事件（展示单位是事件，不是文章）
+  daily_events: 12
+  # 兼容旧字段：单篇条数上限，已被 daily_events 取代
+  daily_size: 12
+  # 日报里主线事件最多占几席（事件详情内的文章条数）
   daily_theme_items: 3
+  # 采集间隔：事件优先后需要更密的采集来维持事件召回
+  collect_minutes: 30
   weekly_papers: 3
   weekly_repos: 2
 
@@ -57,6 +62,11 @@ topics:
   # 只对分数最高的一批候选做聚类，控制向量计算量
   # 120 在热门日子容易卡在临界点（差几条就聚不出主线），放到 180 提召回
   pool: 180
+  # 事件池的时间窗：近 N 小时全量进池，不受分数截断
+  event_window_hours: 96
+  # 单篇事件：没被任何事件收留的内容也各算一件事，最多保留多少条
+  standalone: 40
+  standalone_min_score: 0.5
   # 同一话题至少 2 条内容，否则宁可判定「今日无主线」
   min_members: 2
   # 无共同实体、只靠向量合并时的阈值。
@@ -83,6 +93,10 @@ screen:
   top_n: 30
   # 一次判掉超过一半说明模型跑偏，整批放行，避免清空日报
   max_drop_ratio: 0.5
+  # 一手发布来源：模型容易把「厂商发布自家产品」判成软文，这里的来源豁免 promotional
+  #（off_topic 照剔，比如官方博客里的游戏/汽车内容）
+  official_sources:
+    - official_blogs
 
 selection:
   # 同维度最多 3 条，避免一天全是一个方向

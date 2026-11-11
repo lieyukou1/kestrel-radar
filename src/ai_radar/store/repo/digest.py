@@ -67,8 +67,17 @@ def mark_digest_failed(conn: sqlite3.Connection, digest_id: int, error: str) -> 
     conn.commit()
 
 def reset_digest(conn: sqlite3.Connection, digest_id: int) -> None:
-    """删除失败的 digest 及其条目，允许次日任务重建。"""
+    """删除失败的 digest 及其条目，允许次日任务重建。
+
+    事件优先后，digest 会连带写入 topics / topic_items（即使当天只有单篇事件），
+    不一起清掉会撞上 topics.digest_id 的外键。
+    """
     conn.execute("DELETE FROM digest_items WHERE digest_id = ?", (digest_id,))
+    conn.execute(
+        "DELETE FROM topic_items WHERE topic_id IN (SELECT id FROM topics WHERE digest_id = ?)",
+        (digest_id,),
+    )
+    conn.execute("DELETE FROM topics WHERE digest_id = ?", (digest_id,))
     conn.execute("DELETE FROM digests WHERE id = ?", (digest_id,))
     conn.commit()
 

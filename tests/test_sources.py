@@ -116,6 +116,9 @@ def test_official_blogs_source_is_configured() -> None:
     assert set(feeds) == {
         "openai-news",
         "deepmind-blog",
+        "google-ai-blog",
+        "msr-blog",
+        "bair-blog",
         "nvidia-blog",
         "apple-ml",
         "hf-blog",
@@ -124,6 +127,18 @@ def test_official_blogs_source_is_configured() -> None:
     assert all(feed.get("authority") for feed in feeds.values())
     # NVIDIA 综合博客必须按 AI 关键词过滤
     assert feeds["nvidia-blog"].get("keywords")
+
+
+def test_overseas_media_source_is_configured() -> None:
+    """事件优先需要更多独立来源；海外媒体单独成源，避免混进国内直连组。"""
+    config = load_config(PROJECT_ROOT)
+    source = next(item for item in config.sources if item.id == "media_en")
+    assert source.kind == "rss"
+    assert source.region == "overseas"
+    assert {feed["id"] for feed in source.options["feeds"]} == {
+        "the-decoder",
+        "techcrunch-ai",
+    }
 
     expected_proxy = config.network.proxy if config.network.mode == "overseas-only" else None
     assert config.proxy_for(source) == expected_proxy

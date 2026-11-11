@@ -133,6 +133,21 @@ def test_event_score_rewards_source_diversity() -> None:
     assert cross_source > same_source
 
 
+def test_event_score_counts_same_source_burst_as_coverage() -> None:
+    """同一来源连发 4 条，要压过「两路各 1 条」的小事：大新闻不能被来源多样性压死。"""
+    burst = [entry(i, f"Fable 5.2 实测 {i}") for i in range(1, 5)]
+    spread = [entry(11, "Seedream 5.5 发布"), entry(12, "Seedream 5.5 实测")]
+
+    burst_score, _ = events.score_items(
+        burst, sources_map={i: {"qbitai"} for i in range(1, 5)}, now=NOW
+    )
+    spread_score, _ = events.score_items(
+        spread, sources_map={11: {"qbitai"}, 12: {"hackernews"}}, now=NOW
+    )
+
+    assert burst_score > spread_score
+
+
 def test_compose_daily_renders_theme_then_progress(tmp_path, monkeypatch) -> None:
     conn = connect(tmp_path / "test.db")
     init_db(conn)
@@ -167,6 +182,49 @@ def test_compose_daily_renders_theme_then_progress(tmp_path, monkeypatch) -> Non
 
     assert composition.theme is not None
     assert composition.theme.label == "千问办公 2.0 发布"
-    assert [block.section for block in composition.blocks][:2] == ["theme", "progress"]
+    assert composition.events[0] is composition.theme
     assert len(composition.progress) == 1
     assert composition.progress[0].label == "蚂蚁灵波开源触觉模型"
+
+
+def test_compose_daily_caps_event_count(tmp_path, monkeypatch) -> None:
+    """一级只展示前 N 个事件，多出来的不进当天卡片。"""
+    conn = connect(tmp_path / "test.db")
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    items = [
+        entry(1, "千问办公套件正式发布", score=0.80),
+        entry(2, "阿里千问开源权重更新", score=0.78),
+        entry(3, "蚂蚁灵波开源触觉模型", score=0.75),
+        entry(4, "蚂蚁灵波触觉模型实测", score=0.70),
+        entry(5, "DeepSeek 开源新模型", score=0.68),
+        entry(6, "DeepSeek 新模型实测", score=0.66),
+    ]
+    buckets = events.group_buckets(items, now=NOW)
+    by_entity = {bucket.entity: bucket for bucket in buckets}
+    assignments = [
+        {
+            "bucket": by_entity["千问"].index,
+            "item_ids": [1, 2],
+            "label": "千问办公 2.0 发布",
+            "when": "2026-11-10",
+        },
+        {
+            "bucket": by_entity["蚂蚁"].index,
+            "item_ids": [3, 4],
+            "label": "蚂蚁灵波开源触觉模型",
+        },
+        {
+            "bucket": by_entity["deepseek"].index,
+            "item_ids": [5, 6],
+            "label": "DeepSeek 开源新模型",
+        },
+    ]
+    found = events.build_events(buckets, assignments, now=NOW)
+
+    composition = compose_daily(conn, Config(), items, now=NOW, found_events=found, size=2)
+
+    assert len(composition.events) == 2
+    assert composition.events[0] is composition.theme

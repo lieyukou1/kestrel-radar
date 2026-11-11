@@ -176,6 +176,9 @@ keep 只有下面两种情况填 false：
 
 reason 在 keep=false 时必须填 promotional 或 off_topic 之一（英文小写），keep=true 时留空。
 其余一律 keep=true。只有标题、无法判断时也 keep=true。
+厂商官方博客/官方新闻稿发布的自有产品公告（如 OpenAI、DeepMind、NVIDIA、Hugging Face
+官方博客）是一手发布，不算 promotional，照常保留；真正要剔的是第三方评测软文、
+渠道与活动推广、以及「合作签约」类通稿。
 财经与行业观点、评论、复盘不算 promotional，照常保留。
 以核心贡献判断 dimension，标题里的热词不代表分类。
 不要编造分类名或原因。"""

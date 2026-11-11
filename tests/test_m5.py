@@ -261,10 +261,13 @@ def test_unlabeled_theme_degrades_instead_of_publishing(tmp_path: Path, monkeypa
     )
 
     assert result["count"] >= 1
-    assert conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0] == 0
+    # 没有主线时事件照常展示：至少一个单篇事件落库，只是不标 theme。
+    assert result["theme"] == ""
+    assert result["events_count"] >= 1
+    assert conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0] >= 1
     sections = [row["section"] for row in conn.execute("SELECT section FROM digest_items")]
     assert "theme" not in sections
-    assert "没有清晰的跨来源主线" in Path(result["outbox"]).read_text(encoding="utf-8")
+    assert "今日事件" in Path(result["outbox"]).read_text(encoding="utf-8")
 
 
 def test_selected_items_are_retagged_by_llm(tmp_path: Path, monkeypatch) -> None:
@@ -501,6 +504,44 @@ def test_earliest_material_day_skips_repo_and_falls_back_to_first_seen() -> None
     )
     assert _earliest_material_day(topic) == ("2026-10-28", "材料最早报道日（上界）")
     assert _earliest_material_day(Topic(key="y", label="Y", items=[])) == ("", "")
+
+
+def test_inferred_event_date_far_before_material_counts_as_this_round(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """检索到的是旧源头（去年那轮合作）时，卡片要显示本轮的时间，而不是一年前。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    conn = connect(tmp_path / "test.db")
+    init_db(conn)
+    theme = SimpleNamespace(
+        label="NVIDIA 扩大与韩国主权 AI 合作",
+        items=[
+            {
+                "doc": {
+                    "kind": "blog",
+                    "published_at": "2026-11-09T00:00:00+00:00",
+                    "first_seen_at": "2026-11-09T00:00:00+00:00",
+                }
+            }
+        ],
+    )
+    monkeypatch.setattr(digest_mod, "_source_event_date", lambda *a, **k: ("", ""))
+    monkeypatch.setattr(
+        digest_mod, "_search_event_date", lambda *a, **k: ("2025-10-31", "据 8 条检索报道")
+    )
+    when, note = digest_mod._infer_event_date(theme, object(), conn, None)
+    assert when == "2026-11-09"
+    assert "材料最早" in note
+
+    # 同一轮内的推断值照常采信
+    monkeypatch.setattr(
+        digest_mod, "_search_event_date", lambda *a, **k: ("2026-11-05", "据 3 条检索报道")
+    )
+    assert digest_mod._infer_event_date(theme, object(), conn, None) == (
+        "2026-11-05",
+        "据 3 条检索报道",
+    )
 
 
 def test_search_event_date_uses_news_results(tmp_path: Path, monkeypatch) -> None:
@@ -1353,6 +1394,77 @@ def test_screen_drops_promotional_before_composition(tmp_path: Path, monkeypatch
     ]
 
 
+def test_screen_keeps_official_release_but_drops_official_off_topic(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """官方博客发布自家产品被误判 promotional 时豁免；官方博客里偏题的内容照剔。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    repo.upsert_source(
+        conn,
+        source_id="official_blogs",
+        kind="rss",
+        name="官方博客",
+        authority="A",
+        region="overseas",
+        config={},
+    )
+
+    def add_official(title: str, source_id: str, external_id: str) -> int:
+        document_id = add_document(
+            conn,
+            title=title,
+            tag="4 Agent 与应用",
+            status="observing",
+            kind="blog",
+        )
+        raw_id = repo.insert_raw_item(
+            conn,
+            source_id=source_id,
+            external_id=external_id,
+            url=f"https://example.com/{external_id}",
+            title=title,
+            author=None,
+            published_at=iso(utcnow()),
+            payload={"title": title},
+        )
+        repo.link_document_source(conn, document_id, raw_id)
+        return document_id
+
+    official = add_official("Introducing Businesses in ChatGPT", "official_blogs", "o1")
+    off_topic = add_official("NVIDIA 发布新游戏显卡驱动", "official_blogs", "o2")
+    kept = add_document(
+        conn, title="新的 MoE 路由方法", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    llm = ScreenLLM(
+        {
+            official: {"dimension": "4 Agent 与应用", "keep": False, "reason": "promotional"},
+            off_topic: {"dimension": "6 系统与基础设施", "keep": False, "reason": "off_topic"},
+            kept: {"dimension": "1 模型与架构", "keep": True, "reason": ""},
+        }
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    rows = {row["document_id"] for row in conn.execute("SELECT document_id FROM digest_items")}
+    assert official in rows
+    assert off_topic not in rows
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["screened"]["exempted"] == [
+        {"id": official, "title": "Introducing Businesses in ChatGPT"}
+    ]
+    assert [item["id"] for item in stats["screened"]["dropped"]] == [off_topic]
+
+
 def test_screen_failure_keeps_all_candidates(tmp_path: Path, monkeypatch) -> None:
     """模型调用失败不能拖垮日报：全部候选照常参与编排。"""
     from ai_radar.llm.client import LLMError
@@ -1518,27 +1630,32 @@ def test_digest_uses_segmented_events_for_theme_and_progress(
     monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
 
     result = build_digest(
-        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+        conn,
+        config,
+        notifier=FakeNotifier(config.outbox_dir),
+        digest_date="2026-10-21",
     )
 
     assert result["theme"] == "千问办公 2.0 发布"
+    # 一级展示单位是事件：主线 → 第二个事件 → 单篇事件，不再有「快讯」分区
+    assert result["events_count"] == 3
     sections = [
         row["section"]
         for row in conn.execute(
             "SELECT section FROM digest_items ORDER BY rank"
         ).fetchall()
     ]
-    # 高度相似的标题会被去重折叠，这里只验证「主线 → 进展 → 快讯」的顺序
-    assert sections == ["theme", "progress", "brief"]
+    # 一级展示单位是事件；条目按事件分组落库（主线 2 条 + 事件 2 条 + 单篇 1 条）
+    assert sections == ["theme", "theme", "event", "event", "event"]
     stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
     assert stats["events"]["source"] == "model"
     assert stats["theme_day"] == 1
     assert stats["theme_new"] == 2
-    # 主线与进展各落一条 topic，供明天做跨天跟踪
+    # 每个展示事件都落一条 topic，供跨天跟踪与二级卡片回查
     topics = conn.execute(
         "SELECT event_key FROM topics WHERE topic_date = '2026-10-21' ORDER BY id"
     ).fetchall()
-    assert len(topics) == 2
+    assert len(topics) == 3
     assert all(row["event_key"] for row in topics)
 
 
