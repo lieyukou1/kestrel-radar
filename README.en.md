@@ -10,8 +10,9 @@
 [![local-first](https://img.shields.io/badge/local--first-SQLite-4B8BBE)](https://sqlite.org/)
 
 Kestrel Radar is a **local-first** AI intelligence system. It collects from arXiv, Hugging Face
-Daily Papers, Hacker News, GitHub, Lobsters, official blogs and Chinese tech media, then scores,
-clusters, de-duplicates and delivers a digest to Feishu (interactive cards) or any webhook.
+Daily Papers, Hacker News, GitHub, Lobsters, official blogs and Chinese / overseas tech media,
+then scores, folds reports of the same story into one event, de-duplicates and delivers a digest
+to Feishu (two-level interactive cards: events first, articles on tap) or any webhook.
 
 The difference is not collection — it is **memory**. The same story does not get pushed twice
 because it changed its title or arrived two days late. A topic that genuinely made progress
@@ -44,8 +45,9 @@ deep read to questions to comparison.**
 | Papers | arXiv, Hugging Face Daily Papers | abstracts and authors preserved |
 | Community | Hacker News, Lobsters | points and comments as heat signals |
 | Code | GitHub Search | stars plus **growth across snapshots** |
-| First-party | OpenAI, DeepMind, NVIDIA, Apple ML, HF blogs | avoids second-hand paraphrase |
+| First-party | OpenAI, DeepMind, Google AI, MSR, BAIR, NVIDIA, Apple ML, HF blogs | avoids second-hand paraphrase; own-product announcements are exempt from the promo filter |
 | Chinese | QbitAI, InfoQ, GeekPark, Leiphone, Juejin, kexue.fm | keyword filter and age window |
+| Overseas | The Decoder, TechCrunch AI | event-first ranking needs independent sources for coverage |
 | Private | `config/sources.local.yaml` | personal WeChat feeds, never committed |
 
 Each source has its own cursor and failure domain; raw payloads are stored for replay.
@@ -57,12 +59,20 @@ Each source has its own cursor and failure domain; raw payloads are stored for r
 - Heat = **65% static signal + 35% snapshot momentum** — a repo growing 22% per day maxes it out.
 - GitHub gate: ≥200 stars, ≥3 observations, ≥1.5h span, ≥20 stars/day and ≥1% per day.
 
-### 3. Topic clustering: push events, not articles
+### 3. Event first: events on level one, articles on level two
 
-Semantic clustering folds different angles of the same event (paper / discussion / media) into
-one topic. Sharing a single entity is not enough — semantic similarity must also pass. Entities
-that appear in too many candidates are ignored as topic keys. **If no strong topic exists, it
-says so and sends briefs only.**
+Vector-threshold clustering is gone: two different stories about one entity score 0.79
+(Fable 5.2 vs Opus 5.5) while two reports of one story in different languages score 0.63 —
+no threshold satisfies both. Instead:
+
+1. coarse grouping by entity (including "name + version", e.g. Fable 5.2, Qwen3);
+2. the model splits each bucket into "one thing" events and names them, falling back to
+   one-bucket-one-event.
+
+Event score = coverage 0.30 (sources + 0.5 × extra same-source articles) + item count 0.30 +
+authority 0.20 + recency 0.10 + best item score 0.10. Blog / forum posts that no event claims
+each become their own event (papers and repos are left to the weekly digest) and naturally sink
+to the bottom — **so a day without a clear mainline still shows something**.
 
 ### 4. Echo detection: the core
 
@@ -77,11 +87,18 @@ Follow-up coverage within three days is downgraded to a brief; only a real new v
 or conclusion may start a new topic. Without an event date it falls back to a 7-day window.
 This is what separates "duplicate" from "progress".
 
+When the inferred date is more than 30 days older than this round's materials, the earliest
+report date of the round is shown instead (otherwise cards would say "last year"); the cost is
+that re-reported old news may open a new mainline, bounded by the 30-day document dedupe. The
+same event key within 7 days continues the thread and shows "day N / M new".
+
 ### 5. Three levels of reading
 
-- **L1 digest**: 2–3 topic items plus 1–2 briefs. Monday weekly is 3 papers + 2 repos, ranked by
-  fermented heat.
-- **L2 detail**: structured problem / method / conclusion summary, pre-generated before push.
+- **L1 event list**: the first card holds 12 events (title · article count · source count · day
+  number · one-line takeaway · event date) with the mainline on top. Monday weekly is 3 papers +
+  2 repos, ranked by fermented heat.
+- **L2 event detail**: tapping "details" pulls every article of that event (max 6) with summary,
+  source link, save / dislike. Mainline summaries are generated before the push, so no waiting.
 - **L3 deep read**: background full-text fetch, structured extraction, knowledge-base entry, then
   a "deep read finished" message with motivation, method, evidence, limitations, relations and
   citation anchors.
@@ -107,7 +124,7 @@ tie-breaking order — never used to push obscure content just to fill a dimensi
 
 ![Kestrel Radar daily card (illustration)](assets/card.svg)
 
-> Structure matches a real push; titles are illustrative.
+> Structure illustration (a single card); level one is now an event list, and "details" opens the article list.
 
 ## How it compares
 
@@ -201,8 +218,8 @@ flowchart LR
     S[Sources<br/>arXiv · HF · HN · GitHub<br/>Lobsters · official blogs · RSS] --> N[Normalize<br/>canonical_id · title dedupe · entity conflicts]
     N --> G[Signals<br/>points · comments · stars · snapshot growth]
     G --> R[Score & gates<br/>authority · heat · recency · novelty · preference]
-    R --> T[Topic clustering<br/>semantic + shared entities]
-    T --> C[Compose<br/>topics / briefs / weekly]
+    R --> T[Event grouping<br/>entity buckets → model split]
+    T --> C[Compose<br/>12 events + weekly]
     C --> P[Deliver<br/>Feishu card · Webhook · local Markdown]
     P --> D[(SQLite<br/>documents · signals · topics<br/>digests · interactions · kb)]
     D -. event date & echo detection .-> T
@@ -226,9 +243,11 @@ src/ai_radar/
 | Entity conflict | only when both sides name a product; disjoint products / versions, or release vs incident → not merged |
 | Pushed guard | documents and titles pushed in the last 30 days never re-enter candidates, even if their status is reset |
 | Maturity | papers 48h / forums 24h / repos 24h / blogs 12h |
-| Topic clustering | cosine ≥ 0.82; entity-only ≥ 0.55; entities in >12 docs ignored; ≥2 members |
+| Event grouping | entity buckets (96h window, ≤20 buckets) → model split; coverage = sources + 0.5× extra same-source articles |
+| Event ranking | top 12 events per day; mainline needs ≥2 items; single-item events are included but rank low |
+| Event date floor | inferred dates older than this round's materials by 30+ days are shown as the round's earliest report date |
 | Echo | follow-up within 3 days of the event; 7-day fallback without event date |
-| Cadence | Mon 10:00 weekly (3 papers + 2 repos); Tue–Fri 10:00 daily (5 items, ≤3 topic); weekends off |
+| Cadence | collect every 30 min; Mon 10:00 weekly (3 papers + 2 repos); Tue–Fri 10:00 daily (12 events ≈ 30 articles); weekends off |
 | Breaking insertion | HN ≥300 points / HF ≥120 upvotes / repo ≥500 stars per day |
 | Dimension rotation | deficit multiplier capped at ±20%; 14-day cold start |
 | Model budget | ¥5/day; deep reads pause at 80%, all calls stop at 100% |
@@ -248,6 +267,10 @@ src/ai_radar/
 ## Known limits
 
 - Single user: the bot serves one `open_id`; there is no permission model.
+- Event dates are usually blank for non-mainline events (the split model rarely gives a date and
+  only the mainline triggers the page-date lookup), so level one reliably shows a date for it only.
+- Level one shows 12 events and any pushed document is deduped for 30 days, so a day consumes
+  roughly 30 articles of candidates.
 - Event dates are inferred and can be off by days; inference failure degrades to a window.
 - Summaries, community points and deep-read conclusions are model-generated; the card is an
   entry point, not a source of truth.
@@ -269,11 +292,11 @@ src/ai_radar/
 ```bash
 uv sync --dev
 uv run ruff check .
-uv run pytest -q        # 372 tests
+uv run pytest -q        # 406 tests
 ```
 
-Tests cover collector parsing, normalization and dedupe, entity conflicts, scoring and
-clustering, echo detection, card rendering, channel retries, budget degradation and URL safety.
+Tests cover collector parsing, normalization and dedupe, entity conflicts, scoring and event
+grouping, echo detection, card rendering, channel retries, budget degradation and URL safety.
 GitHub Actions runs ruff and the full suite on Python 3.12 and 3.13.
 
 ## Security
