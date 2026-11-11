@@ -79,9 +79,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     _add_column(conn, "digest_items", "section", "section TEXT NOT NULL DEFAULT 'brief'")
     _add_column(conn, "topics", "dimension", "dimension TEXT")
     _add_column(conn, "topics", "event_date", "event_date TEXT")
+    _add_column(conn, "topics", "event_key", "event_key TEXT")
+    _add_column(conn, "topics", "first_date", "first_date TEXT")
+    _add_column(conn, "topics", "day_index", "day_index INTEGER NOT NULL DEFAULT 1")
+    _add_column(conn, "topics", "new_count", "new_count INTEGER NOT NULL DEFAULT 0")
     _migrate_digest_uniqueness(conn)
     conn.execute(
-        "INSERT INTO meta(key, value) VALUES('schema_version', '6') "
+        "INSERT INTO meta(key, value) VALUES('schema_version', '7') "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     )
     conn.commit()

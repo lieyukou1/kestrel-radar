@@ -6,6 +6,7 @@ from typing import Protocol
 
 SECTION_TITLES = {
     "theme": "今日主线",
+    "progress": "其他进展",
     "breaking": "突发",
     "brief": "快讯",
     "recall": "值得回看",

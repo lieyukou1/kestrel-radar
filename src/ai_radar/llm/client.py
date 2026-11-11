@@ -15,6 +15,8 @@ from .prompts import (
     DIMENSIONS,
     SCREEN_SYSTEM,
     SCREEN_TEMPLATE,
+    SEGMENT_SYSTEM,
+    SEGMENT_TEMPLATE,
     SUMMARY_SYSTEM,
     SUMMARY_TEMPLATE,
     TAG_SYSTEM,
@@ -28,6 +30,8 @@ MAX_TAG_DOCS = 12
 MAX_TAG_ABSTRACT = 320
 # 推送前的候选闸门只看分数最高的一批，条数比重打标多，单独给上限。
 MAX_SCREEN_DOCS = 30
+# 事件切分输入：最多几个粗分组；更多分组对当天日报没有意义。
+MAX_SEGMENT_BUCKETS = 8
 # 模型只允许用这两个理由剔除内容；其他理由不认，避免「今天心情不好」式的自由发挥。
 _SCREEN_REASONS = {"promotional", "off_topic"}
 
@@ -377,6 +381,72 @@ class DeepSeekLLM:
                 "keep": _clean_keep(item.get("keep")),
                 "reason": _clean_screen_reason(item.get("reason")),
             }
+        return result
+
+    def segment_events(
+        self, conn: sqlite3.Connection, buckets: list[dict]
+    ) -> list[dict]:
+        """把「实体粗分组」切成一件件事，并给每件事起名。
+
+        返回 [{bucket, item_ids, label, why, when, is_update, change}]；
+        解析失败返回空列表，调用方退回「一个实体桶就是一件事」。
+        """
+        if not buckets:
+            return []
+        payload = json.dumps(buckets[:MAX_SEGMENT_BUCKETS], ensure_ascii=False)
+        text, _ = self.chat(
+            conn,
+            stage="theme",
+            system=SEGMENT_SYSTEM,
+            user=SEGMENT_TEMPLATE.format(payload=payload),
+            max_tokens=3000,
+        )
+        try:
+            data = parse_json_object(text)
+        except LLMError:
+            retry_text, _ = self.chat(
+                conn,
+                stage="theme",
+                system=SEGMENT_SYSTEM,
+                user=SEGMENT_TEMPLATE.format(payload=payload),
+                max_tokens=4000,
+            )
+            try:
+                data = parse_json_object(retry_text)
+            except LLMError:
+                return []
+        raw = data.get("events")
+        if not isinstance(raw, list):
+            return []
+        result: list[dict] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                bucket = int(item.get("bucket"))
+            except (TypeError, ValueError):
+                continue
+            item_ids: list[int] = []
+            for value in item.get("item_ids") or []:
+                try:
+                    item_ids.append(int(value))
+                except (TypeError, ValueError):
+                    continue
+            label = str(item.get("label") or "").strip()
+            if not label or len(item_ids) < 2:
+                continue
+            result.append(
+                {
+                    "bucket": bucket,
+                    "item_ids": item_ids,
+                    "label": label[:40],
+                    "why": str(item.get("why") or "").strip(),
+                    "when": _clean_when(item.get("when")),
+                    # 事件是否为新进展由调用方结合跨天历史判断，模型不猜。
+                    "is_update": False,
+                    "change": "",
+                }
+            )
         return result
 
     def summarize(self, conn: sqlite3.Connection, document: sqlite3.Row) -> dict | None:

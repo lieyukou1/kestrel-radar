@@ -375,6 +375,50 @@ def test_screen_candidates_returns_empty_on_broken_json(tmp_path, monkeypatch) -
     assert llm.screen_candidates(conn, [{"id": 3, "title": "t", "kind": "blog"}]) == {}
 
 
+# ---------- segment_events ----------
+
+
+def test_segment_events_normalizes_and_drops_invalid_groups(tmp_path, monkeypatch) -> None:
+    conn = make_conn(tmp_path)
+    llm = make_llm()
+    monkeypatch.setattr(
+        llm,
+        "chat",
+        lambda *a, **k: (
+            '{"events": ['
+            '{"bucket": 1, "item_ids": ["5", 6], "label": "千问办公 2.0 发布",'
+            ' "why": "多源报道", "when": "2026-11-10", "is_update": true, "change": "改了"}'
+            ',{"bucket": 2, "item_ids": [7], "label": "只有一条"}'
+            ',{"bucket": 3, "item_ids": [8, 9], "label": ""}'
+            "]}",
+            None,
+        ),
+    )
+
+    result = llm.segment_events(conn, [{"bucket": 1}, {"bucket": 2}, {"bucket": 3}])
+
+    # 单条组和空标题组被丢弃；is_update/change 由调用方判断，模型输入不采信
+    assert result == [
+        {
+            "bucket": 1,
+            "item_ids": [5, 6],
+            "label": "千问办公 2.0 发布",
+            "why": "多源报道",
+            "when": "2026-11-10",
+            "is_update": False,
+            "change": "",
+        }
+    ]
+
+
+def test_segment_events_returns_empty_on_broken_json(tmp_path, monkeypatch) -> None:
+    conn = make_conn(tmp_path)
+    llm = make_llm()
+    monkeypatch.setattr(llm, "chat", lambda *a, **k: ('{"events": [oops]}', None))
+
+    assert llm.segment_events(conn, [{"bucket": 1}]) == []
+
+
 # ---------- summarize ----------
 
 

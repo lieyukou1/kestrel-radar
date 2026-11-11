@@ -16,7 +16,7 @@ from ..config import AppConfig
 from ..llm.client import BudgetExceeded, DeepSeekLLM, LLMError
 from ..store import repo
 from ..util import iso, parse_iso, utcnow
-from . import composer, discussion, entities, rank, recall, rotation, signals, topics
+from . import composer, discussion, entities, events, rank, recall, rotation, signals, topics
 from .cleaning import clean_html
 from .preferences import paused_dimensions, paused_sources
 
@@ -439,7 +439,7 @@ def _earliest_material_day(theme) -> tuple[str, str]:
 
 
 def _search_event_date(
-    llm: DeepSeekLLM,
+    llm: DeepSeekLLM | None,
     conn: sqlite3.Connection,
     label: str,
     *,
@@ -449,10 +449,13 @@ def _search_event_date(
 
     返回 (日期, 来源说明)；搜不到或判断不了就返回空，绝不用材料日期顶替。
     """
-    found: list[dict] = []
+    # 缓存命中不需要模型；没有可用模型时也不做外网检索，省一次调用。
     cached = _cached_event_date(conn, label)
     if cached is not None:
         return cached
+    if llm is None or not hasattr(llm, "chat"):
+        return "", ""
+    found: list[dict] = []
     for query in _search_queries(label):
         found.extend(search_news(query, proxy=proxy, limit=EVENT_SEARCH_LIMIT))
     if not found:
@@ -734,22 +737,162 @@ def _apply_theme_label(
         return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
     if when:
         return ThemeLabel(label, why, when, "模型推断", is_update, change)
+    sourced, note = _infer_event_date(theme, llm, conn, config)
+    return ThemeLabel(label, why, sourced, note, is_update, change)
+
+
+def _infer_event_date(
+    theme, llm: DeepSeekLLM | None, conn: sqlite3.Connection, config: AppConfig | None
+) -> tuple[str, str]:
+    """给事件补一个「事情本身发生的时间」；拿不到就返回空，不拿发布日期充数。"""
     proxy = getattr(getattr(config, "network", None), "proxy", None)
     # 先看原文页面：它离事件最近，新闻转载的日期通常比事件本身晚。
     sourced, source_note = _source_event_date(theme, proxy=proxy)
     if sourced:
         _store_event_date(conn, theme.label, sourced, source_note)
-        return ThemeLabel(label, why, sourced, source_note, is_update, change)
+        return sourced, source_note
     # 原文页面读不到日期，再退回外网检索：用话题实体检索，别用模型起的中文标题。
     searched, note = _search_event_date(llm, conn, theme.label, proxy=proxy)
     if searched:
-        return ThemeLabel(label, why, searched, note, is_update, change)
+        return searched, note
     # 三者都失败时若写空，回声判定会退化成「上次推送距今 ≤7 天」，旧事超过窗口就会被重推；
     # 退到材料最早报道日（上界），保证新写入的主线一定有事件时间。
     material_day, material_note = _earliest_material_day(theme)
     if material_day:
-        return ThemeLabel(label, why, material_day, material_note, is_update, change)
-    return ThemeLabel(label, why, "", "", is_update, change)
+        return material_day, material_note
+    return "", ""
+
+
+def _fresh_entries(scored: list[dict], *, now: datetime, hours: float = 72.0) -> list[dict]:
+    """事件池：近 72 小时的内容，不受分数排名截断。"""
+    fresh: list[dict] = []
+    for entry in scored:
+        document = entry["doc"]
+        published = parse_iso(document["published_at"]) or parse_iso(
+            document["first_seen_at"]
+        )
+        if published is None:
+            continue
+        if (now - published).total_seconds() / 3600 <= hours:
+            fresh.append(entry)
+    return fresh
+
+
+def _found_events(
+    llm: DeepSeekLLM | None,
+    conn: sqlite3.Connection,
+    scored: list[dict],
+    config: AppConfig,
+    *,
+    now: datetime,
+) -> tuple[list[events.Event], dict]:
+    """粗分组 → 模型切事件；模型不可用就退回「一个实体桶一件事」。"""
+    weights = config.weights
+    cfg = weights.get("topics") or {}
+    sources_map = repo.document_sources_map(conn)
+    # 事件池 = 近 72h 全量（不被分数截断）∪ 分数最高的一批（兜住跨天仍在发酵的事件）。
+    fresh = _fresh_entries(scored, now=now)
+    seen = {int(entry["doc"]["id"]) for entry in fresh}
+    head = scored[: int(cfg.get("pool", 180))]
+    pool_entries = fresh + [
+        entry for entry in head if int(entry["doc"]["id"]) not in seen
+    ]
+    buckets = events.group_buckets(
+        pool_entries,
+        sources_map=sources_map,
+        authority_weights=weights.get("authority"),
+        now=now,
+        min_members=int(cfg.get("min_members", 2)),
+        entity_max_docs=int(cfg.get("max_docs", 12)),
+    )
+    stats = {"buckets": len(buckets), "events": 0, "source": "fallback"}
+    found: list[events.Event] = []
+    segment = getattr(llm, "segment_events", None)
+    if llm is not None and buckets and callable(segment):
+        try:
+            assignments = segment(conn, events.bucket_payload(buckets))
+        except (BudgetExceeded, LLMError) as exc:
+            print(f"[digest] segment skipped: {type(exc).__name__}: {exc}", flush=True)
+            assignments = []
+        if assignments:
+            found = events.build_events(
+                buckets,
+                assignments,
+                sources_map=sources_map,
+                authority_weights=weights.get("authority"),
+                now=now,
+            )
+            if found:
+                stats["source"] = "model"
+    if not found:
+        found = events.fallback_events(
+            buckets,
+            sources_map=sources_map,
+            authority_weights=weights.get("authority"),
+            now=now,
+        )
+    stats["events"] = len(found)
+    return found, stats
+
+
+def _event_continuation(
+    conn: sqlite3.Connection, event: events.Event, today: date
+) -> tuple[int, int, str]:
+    """同一事件键 7 天内出现过就是续跟：返回 (第几天, 今天新增条数, 首次日期)。"""
+    since = (today - timedelta(days=7)).isoformat()
+    previous = repo.last_topic_by_key(conn, event.key, since, today.isoformat())
+    if previous is None:
+        return 1, len(event.items), today.isoformat()
+    seen = repo.topic_document_ids(conn, int(previous["id"]))
+    new_count = sum(
+        1 for item in event.items if int(item["doc"]["id"]) not in seen
+    )
+    return (
+        int(previous["day_index"] or 1) + 1,
+        new_count,
+        str(previous["first_date"] or previous["topic_date"]),
+    )
+
+
+def _label_event(
+    llm: DeepSeekLLM | None,
+    conn: sqlite3.Connection,
+    composition: composer.Composition,
+    *,
+    config: AppConfig | None = None,
+    today: date | None = None,
+) -> ThemeLabel:
+    """模型切分过的事件已经自带名字；兜底事件仍走旧的命名链路。
+
+    兜底事件（没有 why / when）意味着模型没有给这件事下过判断，
+    这时才需要 label_theme：它能识别新版本，并补上事件发生时间。
+    """
+    event = composition.theme
+    if event is None:
+        return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
+    if not event.why and not event.when:
+        return _apply_theme_label(
+            llm,
+            conn,
+            composition,
+            config=config,
+            history=(
+                _theme_history(conn, event.entity, today)
+                if today is not None
+                else ""
+            ),
+        )
+    label = str(event.label or "").strip()
+    if topics.is_bucket_label(label) or entities.is_venue(label):
+        label = ""
+    if not label:
+        return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
+    why = event.why or f"围绕「{label}」的讨论同时在多个来源出现。"
+    when = event.when
+    note = "模型推断" if when else ""
+    if not when:
+        when, note = _infer_event_date(event, llm, conn, config)
+    return ThemeLabel(label, why, when, note, event.is_update, event.change)
 
 
 def build_digest(
@@ -788,6 +931,12 @@ def build_digest(
         llm, conn, scored, config
     )
     theme_pref = repo.get_theme_preference(conn)
+    sources_map = repo.document_sources_map(conn)
+    # 事件优先：先用近 72h 全量内容粗分组，再由模型切成「一件事」。
+    found_events: list[events.Event] = []
+    segment_stats: dict = {"buckets": 0, "events": 0, "source": "none"}
+    if kind == "daily":
+        found_events, segment_stats = _found_events(llm, conn, scored, config, now=now)
     turn = None
 
     def _compose_daily(**overrides) -> composer.Composition:
@@ -800,6 +949,8 @@ def build_digest(
             theme_limit=int(cadence.get("daily_theme_items", 3)),
             rotation=turn,
             theme_pref=theme_pref,
+            found_events=found_events or None,
+            sources_map=sources_map,
             **overrides,
         )
 
@@ -818,66 +969,68 @@ def build_digest(
         composition = _compose_daily()
 
     digest_id = repo.create_digest(conn, date, kind=kind)
-    labeled = _apply_theme_label(
-        llm,
-        conn,
-        composition,
-        config=config,
-        history=(
-            _theme_history(conn, composition.theme.label, now.date())
-            if composition.theme is not None
-            else ""
-        ),
-    )
-    # 模型判定「这些内容不是一件事」时，不能硬发一条没有名字的主线：
-    # 先换一条强主线；换不出来就彻底不发主线，让条目回到突发/快讯池。
-    if kind == "daily" and composition.theme is not None and not labeled.label:
-        rejected = {composition.theme.label}
-        composition = _compose_daily(blocked_entities=rejected)
-        if composition.theme is not None:
-            labeled = _apply_theme_label(
-                llm,
-                conn,
-                composition,
-                config=config,
-                history=_theme_history(conn, composition.theme.label, now.date()),
-            )
-        if composition.theme is not None and not labeled.label:
-            composition = _compose_daily(blocked_entities=rejected, allow_theme=False)
-            labeled = ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
-    # 同一件事的跟进报道不该再占一次主线：能换出别的强主线就照常开，换不出就只发快讯。
+
+    labeled = ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
     echo = None
-    if composition.theme is not None:
-        echo = _echo_of(
-            conn,
-            composition.theme.label,
-            labeled.when,
-            now.date(),
-            is_update=labeled.is_update,
-            change=labeled.change,
-        )
-    if echo is not None:
-        note = _echo_note(echo, composition.theme.label, labeled.when)
-        composition = _compose_daily(blocked_entities={echo["entity"]})
-        if composition.theme is not None:
-            labeled = _apply_theme_label(
-                llm,
-                conn,
-                composition,
-                config=config,
-                history=_theme_history(conn, composition.theme.label, now.date()),
+    day_index, new_count, first_date = 1, 0, date
+    if kind == "daily":
+        # 一个事件被否掉只换下一个，不能让当天的主线跟着一起没了。
+        blocked: set[str] = set()
+        for _ in range(3):
+            theme = composition.theme
+            if theme is None:
+                break
+            day_index, new_count, first_date = _event_continuation(
+                conn, theme, now.date()
             )
-        else:
-            labeled = ThemeLabel(why=note)
+            if new_count <= 0:
+                # 同一事件 7 天内推过、今天又没有新增：不再占主线席位。
+                blocked.add(theme.key)
+                composition = _compose_daily(blocked_keys=blocked)
+                continue
+            labeled = _label_event(
+                llm, conn, composition, config=config, today=now.date()
+            )
+            if not labeled.label:
+                blocked.add(theme.key)
+                composition = _compose_daily(blocked_keys=blocked)
+                continue
+            # 续跟事件按事件键认亲，不再走实体回声判定；新事件仍要防媒体回声。
+            if day_index == 1:
+                found_echo = _echo_of(
+                    conn,
+                    theme.entity,
+                    labeled.when,
+                    now.date(),
+                    is_update=labeled.is_update,
+                    change=labeled.change,
+                )
+                if found_echo is not None:
+                    echo = found_echo
+                    blocked.add(theme.key)
+                    composition = _compose_daily(blocked_keys=blocked)
+                    continue
+            break
+        if composition.theme is None or not labeled.label:
+            composition = _compose_daily(blocked_keys=blocked, allow_theme=False)
+            labeled = ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
+            day_index, new_count, first_date = 1, 0, date
+    else:
+        labeled = _apply_theme_label(llm, conn, composition, config=config)
+
     theme_label, theme_reason = labeled.label, labeled.why
     theme_when, theme_when_note = labeled.when, labeled.when_note
+    if composition.theme is not None and day_index > 1:
+        theme_reason = (
+            f"{theme_reason} 该事件已持续第 {day_index} 天，今天新增 {new_count} 条。"
+        ).strip()
     if (
         composition.theme is not None
         and composer.theme_pref_matches(composition.theme, repo.get_theme_preference(conn))
     ):
         theme_reason = theme_reason or "按你设定的临时主题优先挑选"
-    # 卡片上的「围绕此话题找」优先用实体名，它比模型起的标题更适合当检索词。
-    theme_query = composition.theme.label if composition.theme is not None else ""
+    # 卡片上的「围绕此话题找」用实体名，比模型起的事件标题更适合当检索词。
+    theme_query = composition.theme.entity if composition.theme is not None else ""
 
     # 闸门已经给过高分候选的维度，这里直接沿用；漏掉的才补一次模型调用。
     retagged = _retag_selected(
@@ -894,16 +1047,47 @@ def build_digest(
             kind=kind,
             label=theme_label,
             summary=theme_reason,
-            entity=composition.theme.label,
+            entity=composition.theme.entity,
             dimension=composition.theme_dimension or None,
             score=composition.theme.score,
             item_count=len(composition.theme.items),
             event_date=theme_when,
+            event_key=composition.theme.key,
+            first_date=first_date,
+            day_index=day_index,
+            new_count=new_count,
         )
         for index, entry in enumerate(composition.theme.items, start=1):
             repo.add_topic_item(
                 conn,
                 topic_id=topic_id,
+                document_id=int(entry["doc"]["id"]),
+                angle=str(entry["doc"]["kind"]),
+                rank=index,
+            )
+
+    # 其他进展也入库：跨天跟踪靠 topic_items 判断「今天有没有新增」。
+    for event in composition.progress:
+        p_day, p_new, p_first = _event_continuation(conn, event, now.date())
+        progress_topic_id = repo.add_topic(
+            conn,
+            digest_id=digest_id,
+            topic_date=date,
+            kind=kind,
+            label=event.label,
+            summary=event.why,
+            entity="",
+            score=event.score,
+            item_count=len(event.items),
+            event_key=event.key,
+            first_date=p_first,
+            day_index=p_day,
+            new_count=p_new,
+        )
+        for index, entry in enumerate(event.items, start=1):
+            repo.add_topic_item(
+                conn,
+                topic_id=progress_topic_id,
                 document_id=int(entry["doc"]["id"]),
                 angle=str(entry["doc"]["kind"]),
                 rank=index,
@@ -1056,6 +1240,10 @@ def build_digest(
             "theme_when_note": theme_when_note,
             "theme_echo": "" if echo is None else str(echo["entity"]),
             "theme_dimension": composition.theme_dimension,
+            "theme_day": day_index,
+            "theme_new": new_count,
+            "events": segment_stats,
+            "progress": [event.key for event in composition.progress],
             "outbox": location,
             "candidates": candidate_count,
             "screened": screen_stats,

@@ -106,7 +106,14 @@ from .sources import (
     upsert_source,
 )
 from .stats import stats
-from .topics import add_topic, add_topic_item, last_topic_for_entity, recent_topics
+from .topics import (
+    add_topic,
+    add_topic_item,
+    last_topic_by_key,
+    last_topic_for_entity,
+    recent_topics,
+    topic_document_ids,
+)
 from .usage import daily_usage, record_llm_usage
 from .vectors import (
     documents_missing_vector,
@@ -186,6 +193,8 @@ __all__ = [
     "recent_recall_tags",
     "recent_topics",
     "last_topic_for_entity",
+    "last_topic_by_key",
+    "topic_document_ids",
     "record_llm_usage",
     "remove_interaction",
     "remove_kb_article",

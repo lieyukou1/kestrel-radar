@@ -1443,6 +1443,218 @@ def test_screen_disabled_skips_model(tmp_path: Path, monkeypatch) -> None:
     assert llm.screen_calls == 0
 
 
+class SegmentLLM:
+    """把实体桶整组切成一个事件：用来验证「主线 + 其他进展」的接线。"""
+
+    def __init__(self, groups: dict[str, dict]) -> None:
+        self.groups = groups
+
+    def segment_events(self, conn, buckets):
+        result = []
+        for bucket in buckets:
+            group = self.groups.get(bucket["entity"])
+            if not group:
+                continue
+            result.append(
+                {
+                    "bucket": bucket["bucket"],
+                    "item_ids": [int(item["id"]) for item in bucket["items"]],
+                    "label": group["label"],
+                    "why": "多个来源同时报道",
+                    "when": group.get("when", ""),
+                    "is_update": False,
+                    "change": "",
+                }
+            )
+        return result
+
+    def summarize(self, conn, document):
+        return None
+
+
+def add_event_documents(conn) -> None:
+    for title in (
+        "千问办公2.0发布",
+        "千问办公2.0实测",
+        "蚂蚁灵波开源触觉模型",
+        "蚂蚁灵波触觉模型实测",
+    ):
+        add_document(
+            conn,
+            title=title,
+            tag="1 模型与架构",
+            status="observing",
+            kind="blog",
+            days_ago=1,
+        )
+    add_document(
+        conn,
+        title="一条没有实体的独立快讯",
+        tag="2 训练与对齐",
+        status="observing",
+        kind="blog",
+        days_ago=1,
+    )
+
+
+def test_digest_uses_segmented_events_for_theme_and_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    add_event_documents(conn)
+    llm = SegmentLLM(
+        {
+            "千问": {"label": "千问办公 2.0 发布", "when": "2026-11-10"},
+            "蚂蚁": {"label": "蚂蚁灵波开源触觉模型"},
+        }
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    assert result["theme"] == "千问办公 2.0 发布"
+    sections = [
+        row["section"]
+        for row in conn.execute(
+            "SELECT section FROM digest_items ORDER BY rank"
+        ).fetchall()
+    ]
+    # 高度相似的标题会被去重折叠，这里只验证「主线 → 进展 → 快讯」的顺序
+    assert sections == ["theme", "progress", "brief"]
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["events"]["source"] == "model"
+    assert stats["theme_day"] == 1
+    assert stats["theme_new"] == 2
+    # 主线与进展各落一条 topic，供明天做跨天跟踪
+    topics = conn.execute(
+        "SELECT event_key FROM topics WHERE topic_date = '2026-10-21' ORDER BY id"
+    ).fetchall()
+    assert len(topics) == 2
+    assert all(row["event_key"] for row in topics)
+
+
+def test_digest_marks_a_continuing_event_with_day_and_new_count(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    add_event_documents(conn)
+    today = utcnow().date()
+    previous_id = repo.add_topic(
+        conn,
+        digest_id=None,
+        topic_date=(today - timedelta(days=1)).isoformat(),
+        kind="daily",
+        label="千问办公 2.0 发布",
+        summary="",
+        entity="千问",
+        score=1.0,
+        item_count=1,
+        event_date="2026-11-10",
+        event_key="千问|release|2026-11-10",
+        first_date=(today - timedelta(days=1)).isoformat(),
+        day_index=1,
+        new_count=2,
+    )
+    first_doc = conn.execute(
+        "SELECT id FROM documents WHERE title = '千问办公2.0发布'"
+    ).fetchone()["id"]
+    repo.add_topic_item(
+        conn, topic_id=previous_id, document_id=int(first_doc), angle="blog", rank=1
+    )
+    llm = SegmentLLM({"千问": {"label": "千问办公 2.0 发布", "when": "2026-11-10"}})
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["theme"] == "千问办公 2.0 发布"
+    assert stats["theme_day"] == 2
+    assert stats["theme_new"] == 1
+    topic = conn.execute(
+        "SELECT summary, day_index, new_count FROM topics"
+        " WHERE topic_date = '2026-10-21' AND event_key = '千问|release|2026-11-10'"
+    ).fetchone()
+    assert topic["day_index"] == 2
+    assert topic["new_count"] == 1
+    assert "第 2 天" in topic["summary"]
+
+
+def test_digest_skips_a_continuation_without_new_items(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    add_event_documents(conn)
+    today = utcnow().date()
+    previous_id = repo.add_topic(
+        conn,
+        digest_id=None,
+        topic_date=(today - timedelta(days=1)).isoformat(),
+        kind="daily",
+        label="千问办公 2.0 发布",
+        summary="",
+        entity="千问",
+        score=1.0,
+        item_count=2,
+        event_date="2026-11-10",
+        event_key="千问|release|2026-11-10",
+        first_date=(today - timedelta(days=1)).isoformat(),
+        day_index=1,
+        new_count=2,
+    )
+    for rank, title in enumerate(("千问办公2.0发布", "千问办公2.0实测"), start=1):
+        document_id = conn.execute(
+            "SELECT id FROM documents WHERE title = ?", (title,)
+        ).fetchone()["id"]
+        repo.add_topic_item(
+            conn,
+            topic_id=previous_id,
+            document_id=int(document_id),
+            angle="blog",
+            rank=rank,
+        )
+    llm = SegmentLLM(
+        {
+            "千问": {"label": "千问办公 2.0 发布", "when": "2026-11-10"},
+            "蚂蚁": {"label": "蚂蚁灵波开源触觉模型"},
+        }
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    # 千问昨天推过、今天没有新增条目 → 让位给蚂蚁
+    assert result["theme"] == "蚂蚁灵波开源触觉模型"
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["theme_day"] == 1
+
+
 
 def test_related_and_compare_cards(tmp_path: Path) -> None:
     from ai_radar.adapters.notify.feishu import build_compare_card, build_related_card

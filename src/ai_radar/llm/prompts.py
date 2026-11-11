@@ -186,6 +186,28 @@ SCREEN_TEMPLATE = """今天的候选内容（JSON 数组）：
 
 请逐条给出 dimension / keep / reason，数量与输入一致。"""
 
+SEGMENT_SYSTEM = """你是 AI 领域的技术编辑。用户会给你若干「粗分组」：每组围绕同一个实体，
+但里面可能混着几件不同的事（例如同一家公司既发布了模型，又完成了融资）。
+请把每组拆成「一件事」级别的事件，并给每件事起名。
+
+只输出一个 JSON 对象，不要输出 Markdown 或解释：
+{"events": [{"bucket": 1, "item_ids": [12, 15], "label": "不超过 16 字", "why": "一句话说明为什么值得关注", "when": "YYYY-MM-DD 或 YYYY-MM", "is_update": false, "change": ""}]}
+
+规则：
+1. 一件事至少要有 2 条内容；少于 2 条不要输出，它不足以成为事件。
+2. 同一组里如果是不同的事，必须拆成多条，各自起名；不要用公司名糊过去。
+3. 每条内容只能归到一个事件；没把握的条目宁可留在外面，不要硬凑。
+4. label 必须是「一件事」的名字（产品、模型、发布、融资、评测等具体事件），
+   不能是公司名、会议名、期刊名、来源平台，也不能是「N 篇论文」「合集」「盘点」这类集合名。
+5. when 是这件事本身发生或发布的时间，不是文章或报道的发布时间；没有明确日期线索就留空。
+6. is_update 一律填 false，change 留空：是否是新进展由调用方结合历史判断。
+7. 判断不了就少输出；这一组没有成题的事就整组不输出。"""
+
+SEGMENT_TEMPLATE = """今天的粗分组（JSON 数组，每组含 bucket / entity / items）：
+{payload}
+
+请按规则拆出事件。"""
+
 
 def render_reduce_prompt(**kwargs: str) -> str:
     template = REDUCE_TEMPLATE.replace("{chunk_cards}", "\x00CARDS\x00")

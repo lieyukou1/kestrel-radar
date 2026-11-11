@@ -18,13 +18,18 @@ def add_topic(
     item_count: int,
     dimension: str | None = None,
     event_date: str = "",
+    event_key: str = "",
+    first_date: str = "",
+    day_index: int = 1,
+    new_count: int = 0,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO topics(
             digest_id, topic_date, kind, label, summary, entity, dimension,
-            score, item_count, event_date, created_at
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            score, item_count, event_date, event_key, first_date, day_index,
+            new_count, created_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             digest_id,
@@ -37,6 +42,10 @@ def add_topic(
             score,
             item_count,
             event_date,
+            event_key,
+            first_date or topic_date,
+            day_index,
+            new_count,
             iso(utcnow()),
         ),
     )
@@ -85,3 +94,27 @@ def last_topic_for_entity(
         """,
         (entity, before_date),
     ).fetchone()
+
+
+def last_topic_by_key(
+    conn: sqlite3.Connection, event_key: str, since_date: str, before_date: str
+) -> sqlite3.Row | None:
+    """同一事件键在时间窗内的上一次推送，用于跨天跟踪与「新增内容」判定。"""
+    key = str(event_key or "").strip()
+    if not key:
+        return None
+    return conn.execute(
+        """
+        SELECT * FROM topics
+        WHERE event_key = ? AND topic_date >= ? AND topic_date < ?
+        ORDER BY topic_date DESC LIMIT 1
+        """,
+        (key, since_date, before_date),
+    ).fetchone()
+
+
+def topic_document_ids(conn: sqlite3.Connection, topic_id: int) -> set[int]:
+    rows = conn.execute(
+        "SELECT document_id FROM topic_items WHERE topic_id = ?", (topic_id,)
+    ).fetchall()
+    return {int(row["document_id"]) for row in rows}

@@ -107,6 +107,11 @@ CREATE TABLE IF NOT EXISTS topics (
   item_count    INTEGER NOT NULL DEFAULT 0,
   -- 事件本身发生/发布的时间，用来判断下次是「新进展」还是「同一件事的回声」
   event_date    TEXT,
+  -- 事件身份：实体|动作|事件日期。跨天复用同一个 key 就是同一件事的持续跟踪
+  event_key     TEXT,
+  first_date    TEXT,
+  day_index     INTEGER NOT NULL DEFAULT 1,
+  new_count     INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL
 );
 

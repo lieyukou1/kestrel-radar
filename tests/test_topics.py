@@ -3,11 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-import pytest
-
 from ai_radar.pipeline.composer import _duplicate_of, compose_daily, compose_weekly
 from ai_radar.pipeline.entities import extract, filter_by_frequency
-from ai_radar.pipeline.topics import build_topics
 from ai_radar.store.db import connect, init_db
 
 NOW = datetime(2026, 10, 26, 3, tzinfo=UTC)
@@ -99,20 +96,6 @@ def test_duplicate_check_respects_conflicting_products() -> None:
     assert _duplicate_of(syndicated, [released], {}) is True
 
 
-def test_single_shared_entity_needs_semantic_support() -> None:
-    """只共享一个实体、语义又不接近时，不能合并成话题。"""
-    items = [
-        entry(1, "blog", "JEV 新版发布", 0.80),
-        entry(2, "blog", "JEV 的另一个用法", 0.70),
-    ]
-    far = {1: [1.0, 0.0], 2: [0.0, 1.0]}
-    assert build_topics(items, vectors=far) == []
-
-    close = {1: [1.0, 0.0], 2: [0.99, 0.01]}
-    found = build_topics(items, vectors=close)
-    assert len(found) == 1 and len(found[0].items) == 2
-
-
 def test_entities_filtered_by_document_frequency() -> None:
     raw = {1: {"a", "rare"}, 2: {"a", "b"}, 3: {"a", "b"}, 4: {"generic"}}
     filtered = filter_by_frequency(raw, min_docs=2, max_docs=3)
@@ -120,63 +103,6 @@ def test_entities_filtered_by_document_frequency() -> None:
     assert filtered[2] == {"a", "b"}
     # 只出现一次的实体无法成题
     assert "generic" not in filtered[4]
-
-
-def test_topics_merge_by_shared_entity_across_kinds(tmp_path) -> None:
-    items = [
-        entry(1, "paper", "JEV v2: Browser-Native Agent Sandbox", 0.80),
-        entry(2, "blog", "JEV 新版把沙箱搬进浏览器", 0.78),
-        entry(3, "forum", "JEV is now sandboxed, thoughts?", 0.76),
-        entry(4, "blog", "完全无关的另一篇", 0.60),
-    ]
-    found = build_topics(items, vectors={})
-    assert len(found) == 1
-    topic = found[0]
-    assert topic.label == "jev"
-    assert len(topic.items) == 3
-    assert len(topic.kinds) == 3
-    # 话题分是平均分乘跨类型加成，不是成员总分：否则大簇必然霸榜。
-    average = sum(item["score"] for item in topic.items) / len(topic.items)
-    assert topic.score == pytest.approx(average * 1.24)
-
-
-def test_cluster_stops_growing_at_max_docs() -> None:
-    """一个热点不能无限吞并：簇达到上限后必须另起新簇。"""
-    items = [
-        entry(1, "blog", "long context retrieval one", 0.90),
-        entry(2, "forum", "long context retrieval two", 0.89),
-        entry(3, "blog", "long context retrieval three", 0.88),
-        entry(4, "forum", "long context retrieval four", 0.87),
-        entry(5, "blog", "long context retrieval five", 0.86),
-        entry(6, "forum", "long context retrieval six", 0.85),
-    ]
-    same = {doc_id: [1.0, 0.0] for doc_id in range(1, 7)}
-
-    found = build_topics(items, vectors=same, max_docs=3, similarity=0.82)
-
-    assert found
-    assert max(len(topic.items) for topic in found) <= 3
-
-
-def test_vector_fallback_does_not_chain_unrelated_items() -> None:
-    """A≈B、B≈C 不能推出 A≈C；否则一篇热门论文能串起当天所有内容。"""
-    items = [
-        entry(1, "blog", "long context retrieval alpha", 0.90),
-        entry(2, "paper", "long context retrieval beta", 0.85),
-        entry(3, "forum", "long context retrieval gamma", 0.80),
-    ]
-    # 2 与 1 相似、3 与 2 相似，但 1 与 3 正交
-    vectors = {1: [1.0, 0.0], 2: [0.7, 0.7], 3: [0.0, 1.0]}
-
-    found = build_topics(items, vectors=vectors, similarity=0.6)
-
-    assert len(found) == 1
-    assert len(found[0].items) == 2
-
-
-def test_single_item_topics_are_dropped() -> None:
-    items = [entry(1, "blog", "独立话题 A", 0.8), entry(2, "blog", "独立话题 B", 0.7)]
-    assert build_topics(items, vectors={}) == []
 
 
 def test_compose_daily_puts_theme_first_then_briefs(tmp_path, monkeypatch) -> None:
