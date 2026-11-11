@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -28,6 +29,21 @@ THEME_FETCH_TIMEOUT = 6.0
 THEME_BODY_CHARS = 1200
 # 摘要短于这个长度基本是「点击查看原文」之类的空壳，需要抓正文。
 THEME_MIN_ABSTRACT = 80
+# 入选内容要写摘要：摘要太短说明只有标题，摘要前并发补抓一次正文。
+BODY_MIN_ABSTRACT = 400
+BODY_FETCH_WORKERS = 4
+BODY_FETCH_TIMEOUT = 8.0
+# 整批正文抓取的总预算：到点就用手上已有的，没回来的放弃，不拖住推送。
+BODY_FETCH_DEADLINE = 8.0
+BODY_CHARS = 4000
+# 企业公关稿的标题特征：签约、揭牌、启动仪式这类，不是技术内容。
+PR_TITLE_RE = re.compile(
+    r"战略合作|签约|揭牌|启动仪式|框架协议|合作协议|项目启动|正式启动|开工|奠基|获批|中标"
+)
+# 推送前的候选闸门：只看分数最高的一批，剔除企业软文与 AI 无关内容。
+SCREEN_TOP_N = 30
+# 一次判掉大半说明模型跑偏；整批放行，宁可推一条普通内容，也不能清空日报。
+SCREEN_MAX_DROP_RATIO = 0.5
 # 材料里找不到事件日期时，先去原文页面读发布日期；读不到才搜外网。
 _SEARCH_DATE = re.compile(r"20\d{2}-\d{2}(?:-\d{2})?")
 # 原文页面的发布日期：结构化字段优先，正文里的日期不可靠，不碰。
@@ -156,6 +172,9 @@ def collect_candidates(
             sources = doc_sources.get(int(document["id"])) or set()
             if sources and sources <= paused_src:
                 continue
+        # 企业通稿：标题写着战略合作/签约/揭牌，内容通常是公关话术，不是技术进展。
+        if PR_TITLE_RE.search(str(document["title"] or "")):
+            continue
         if document["kind"] == "repo" and not signals.repo_gate_ok(
             conn, int(document["id"]), weights.get("repo_gate")
         ):
@@ -182,7 +201,9 @@ def collect_candidates(
     return scored
 
 
-def _fetch_html(url: str, *, proxy: str | None = None) -> str:
+def _fetch_html(
+    url: str, *, proxy: str | None = None, timeout: float = THEME_FETCH_TIMEOUT
+) -> str:
     """抓原文页面原始 HTML；失败静默返回空，不影响推送。"""
     if not url or not is_public_http_url(url):
         return ""
@@ -193,7 +214,7 @@ def _fetch_html(url: str, *, proxy: str | None = None) -> str:
         try:
             with httpx.Client(
                 proxy=attempt_proxy,
-                timeout=THEME_FETCH_TIMEOUT,
+                timeout=timeout,
                 follow_redirects=True,
                 headers={"User-Agent": "ai-radar/0.1 (personal research; contact: local)"},
             ) as client:
@@ -206,15 +227,78 @@ def _fetch_html(url: str, *, proxy: str | None = None) -> str:
     return ""
 
 
-def _fetch_body(url: str) -> str:
-    """抓正文用于判断事件时间；失败静默返回空，不影响推送。"""
-    text = _fetch_html(url)
+def _fetch_body(
+    url: str,
+    *,
+    proxy: str | None = None,
+    max_chars: int = THEME_BODY_CHARS,
+    timeout: float = THEME_FETCH_TIMEOUT,
+) -> str:
+    """抓正文；失败静默返回空，不影响推送。"""
+    text = _fetch_html(url, proxy=proxy, timeout=timeout)
     if not text:
         return ""
     try:
-        return clean_html(text, url, kind="blog")[:THEME_BODY_CHARS]
+        return clean_html(text, url, kind="blog")[:max_chars]
     except Exception:
         return ""
+
+
+def _needs_body(document: sqlite3.Row) -> bool:
+    """论文摘要是作者写的，够用；其余类型摘要太短说明抓到的只是空壳。"""
+    if document["kind"] == "paper":
+        return False
+    abstract = " ".join(str(document["abstract"] or "").split())
+    return len(abstract) < BODY_MIN_ABSTRACT
+
+
+def _prefetch_bodies(config: AppConfig, entries: list[dict]) -> dict[int, str]:
+    """并发补抓入选内容的正文，给摘要当输入。
+
+    只抓摘要过短的那些；整批受 BODY_FETCH_DEADLINE 约束，抓不回来就退回原摘要。
+    """
+    targets = [
+        (int(entry["doc"]["id"]), str(entry["doc"]["url"] or ""))
+        for entry in entries
+        if _needs_body(entry["doc"]) and str(entry["doc"]["url"] or "")
+    ]
+    if not targets:
+        return {}
+    network = getattr(config, "network", None)
+    proxy = network.proxy if getattr(network, "mode", "") == "overseas-only" else None
+    bodies: dict[int, str] = {}
+    pool = ThreadPoolExecutor(max_workers=BODY_FETCH_WORKERS)
+    try:
+        futures = {
+            pool.submit(
+                _fetch_body,
+                url,
+                proxy=proxy,
+                max_chars=BODY_CHARS,
+                timeout=BODY_FETCH_TIMEOUT,
+            ): document_id
+            for document_id, url in targets
+        }
+        wait(futures, timeout=BODY_FETCH_DEADLINE)
+        for future, document_id in futures.items():
+            if not future.done() or future.cancelled():
+                continue
+            try:
+                body = future.result()
+            except Exception:
+                continue
+            if body:
+                bodies[document_id] = body
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return bodies
+
+
+def _with_body(document: sqlite3.Row, body: str) -> dict:
+    """把正文当成摘要喂给模型；Row 不可变，拷一份 dict。"""
+    data = {key: document[key] for key in document.keys()}
+    data["abstract"] = body
+    return data
 
 
 def _normalize_date(raw: str) -> str:
@@ -498,17 +582,25 @@ def _theme_history(conn: sqlite3.Connection, entity: str, today: date) -> str:
     )
 
 
-def _retag_selected(
-    llm: DeepSeekLLM | None, conn: sqlite3.Connection, entries: list[dict]
-) -> dict[int, str]:
-    """给真正入选推送的少量内容做一次 LLM 重打标。
+def _screen_candidates(
+    llm: DeepSeekLLM | None,
+    conn: sqlite3.Connection,
+    scored: list[dict],
+    config: AppConfig,
+) -> tuple[list[dict], dict[int, str], dict]:
+    """推送前筛掉企业软文与 AI 无关内容，顺带定好维度。
 
-    采集时的关键词启发式会把「Agent 数据工程」归到 Agent、把集合名归到模型，
-    只修正用户要看的那几条；调用失败或结果非法时沿用原标签，不影响推送。
+    返回 (保留的候选, {document_id: dimension}, 统计)。只判分数最高的一批，
+    后面编排照常在剩余候选里挑；模型不可用、调用失败或剔除比例异常时全部放行。
     """
-    classify = getattr(llm, "classify_dimensions", None)
-    if llm is None or not entries or not callable(classify):
-        return {}
+    cfg = config.weights.get("screen") or {}
+    enabled = bool(cfg.get("enabled", True))
+    stats: dict = {"enabled": enabled, "dropped": []}
+    screen = getattr(llm, "screen_candidates", None)
+    if not enabled or llm is None or not callable(screen) or not scored:
+        return scored, {}, stats
+
+    head = scored[: int(cfg.get("top_n", SCREEN_TOP_N))]
     payload = [
         {
             "id": int(entry["doc"]["id"]),
@@ -516,13 +608,81 @@ def _retag_selected(
             "kind": str(entry["doc"]["kind"] or ""),
             "abstract": str(entry["doc"]["abstract"] or ""),
         }
-        for entry in entries
+        for entry in head
     ]
     try:
-        mapping = classify(conn, payload)
+        verdicts = screen(conn, payload)
     except (BudgetExceeded, LLMError) as exc:
-        print(f"[digest] retag skipped: {type(exc).__name__}: {exc}", flush=True)
-        return {}
+        print(f"[digest] screen skipped: {type(exc).__name__}: {exc}", flush=True)
+        return scored, {}, stats
+    if not verdicts:
+        # 模型输出没法解析时也会走到这里；留一行日志，否则闸门失效只能靠翻 stats 发现。
+        print("[digest] screen skipped: no verdicts", flush=True)
+        return scored, {}, stats
+
+    dropped = {
+        document_id
+        for document_id, verdict in verdicts.items()
+        if not verdict.get("keep", True)
+    }
+    max_drop = int(len(head) * float(cfg.get("max_drop_ratio", SCREEN_MAX_DROP_RATIO)))
+    if len(dropped) > max_drop:
+        print(f"[digest] screen ignored: dropped {len(dropped)}/{len(head)}", flush=True)
+        return scored, {}, stats
+
+    titles = {int(entry["doc"]["id"]): str(entry["doc"]["title"] or "") for entry in head}
+    stats["dropped"] = [
+        {
+            "id": document_id,
+            "title": titles.get(document_id, ""),
+            "reason": verdicts[document_id].get("reason", ""),
+        }
+        for document_id in sorted(dropped)
+    ]
+    dimensions = {
+        document_id: verdict["dimension"]
+        for document_id, verdict in verdicts.items()
+        if verdict.get("dimension")
+    }
+    kept = [entry for entry in scored if int(entry["doc"]["id"]) not in dropped]
+    return kept, dimensions, stats
+
+
+def _retag_selected(
+    llm: DeepSeekLLM | None,
+    conn: sqlite3.Connection,
+    entries: list[dict],
+    *,
+    known: dict[int, str] | None = None,
+) -> dict[int, str]:
+    """给真正入选推送的少量内容做一次 LLM 重打标。
+
+    采集时的关键词启发式会把「Agent 数据工程」归到 Agent、把集合名归到模型，
+    只修正用户要看的那几条；调用失败或结果非法时沿用原标签，不影响推送。
+    `known` 是候选闸门已经给过的维度，命中就不再重复问模型。
+    """
+    known = known or {}
+    mapping: dict[int, str] = {
+        int(entry["doc"]["id"]): known[int(entry["doc"]["id"])]
+        for entry in entries
+        if int(entry["doc"]["id"]) in known
+    }
+    missing = [entry for entry in entries if int(entry["doc"]["id"]) not in known]
+    classify = getattr(llm, "classify_dimensions", None)
+    if llm is not None and missing and callable(classify):
+        payload = [
+            {
+                "id": int(entry["doc"]["id"]),
+                "title": str(entry["doc"]["title"] or ""),
+                "kind": str(entry["doc"]["kind"] or ""),
+                "abstract": str(entry["doc"]["abstract"] or ""),
+            }
+            for entry in missing
+        ]
+        try:
+            mapping.update(classify(conn, payload))
+        except (BudgetExceeded, LLMError) as exc:
+            print(f"[digest] retag skipped: {type(exc).__name__}: {exc}", flush=True)
     for entry in entries:
         document_id = int(entry["doc"]["id"])
         tag = mapping.get(document_id)
@@ -621,6 +781,12 @@ def build_digest(
     weights = config.weights
     cadence = weights.get("cadence") or {}
     scored = collect_candidates(conn, config, now=now)
+    candidate_count = len(scored)
+    llm = DeepSeekLLM(config.llm) if config.llm else None
+    # 推送前先过闸门：企业软文与 AI 无关内容在编排前剔掉，空出的席位自动补位。
+    scored, screened_dimensions, screen_stats = _screen_candidates(
+        llm, conn, scored, config
+    )
     theme_pref = repo.get_theme_preference(conn)
     turn = None
 
@@ -652,7 +818,6 @@ def build_digest(
         composition = _compose_daily()
 
     digest_id = repo.create_digest(conn, date, kind=kind)
-    llm = DeepSeekLLM(config.llm) if config.llm else None
     labeled = _apply_theme_label(
         llm,
         conn,
@@ -714,8 +879,10 @@ def build_digest(
     # 卡片上的「围绕此话题找」优先用实体名，它比模型起的标题更适合当检索词。
     theme_query = composition.theme.label if composition.theme is not None else ""
 
-    # 只在入选之后重打标：只影响要看的内容和维度轮转，不额外给全库分类花钱。
-    retagged = _retag_selected(llm, conn, composition.items)
+    # 闸门已经给过高分候选的维度，这里直接沿用；漏掉的才补一次模型调用。
+    retagged = _retag_selected(
+        llm, conn, composition.items, known=screened_dimensions
+    )
     if retagged and composition.theme is not None:
         composition.theme_dimension = composer.topic_dimension(composition.theme)
 
@@ -748,6 +915,8 @@ def build_digest(
     summary_errors: list[str] = []
     discussion_used = 0
     index = 0
+    # 摘要前先补抓正文：只有标题的条目模型无从下手，写出来就是「未知」。
+    bodies = _prefetch_bodies(config, entries) if llm is not None else {}
     for block in composition.blocks:
         for entry in block.items:
             index += 1
@@ -756,8 +925,11 @@ def build_digest(
             target = repo.discussion_target(conn, int(document["id"]))
             summary: dict = {"abstract": (document["abstract"] or "")[:280]}
             if llm is not None:
+                body = bodies.get(int(document["id"]))
                 try:
-                    generated = llm.summarize(conn, document)
+                    generated = llm.summarize(
+                        conn, _with_body(document, body) if body else document
+                    )
                     if generated:
                         summary = generated
                         summaries += 1
@@ -885,7 +1057,8 @@ def build_digest(
             "theme_echo": "" if echo is None else str(echo["entity"]),
             "theme_dimension": composition.theme_dimension,
             "outbox": location,
-            "candidates": len(scored),
+            "candidates": candidate_count,
+            "screened": screen_stats,
             "summaries": summaries,
             "summary_errors": summary_errors,
             "recall": None if recall_candidate is None else recall_candidate.document_id,
@@ -906,7 +1079,8 @@ def build_digest(
         "kind": kind,
         "count": len(items),
         "theme": theme_label,
-        "candidates": len(scored),
+        "candidates": candidate_count,
+        "screened": screen_stats,
         "summaries": summaries,
         "summary_errors": summary_errors,
         "outbox": location,

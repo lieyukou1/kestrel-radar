@@ -27,6 +27,8 @@ sources:
     enabled: true
     max_results: 50
     query: "AI"
+    # 采集按时间倒序，刚发出来的帖子常常只有 1-2 分；低于 20 分的基本没进入讨论
+    min_points: 20
 
   - id: hf_daily
     kind: hf_daily
@@ -63,17 +65,27 @@ sources:
         name: 量子位
         url: https://www.qbitai.com/feed
         authority: A
-      # 下面的关键词锚点在 infoq-cn 上定义，其余 feed 复用（YAML 锚点必须先定义后引用）
+        # 「A；B；C」式的聚合早报信息密度低，整条丢弃；
+        # 「一步搞定 / 无需自建 / 免费额度」这类标题基本是厂商软文，采集时就拦掉。
+        exclude_keywords: &exclude_common
+          - "；"
+          - 一步搞定
+          - 无需自建
+          - 免费额度
+          - 限时
+          - 立即体验
+          - 选型指南
+          - 白皮书
+          - 注册即
+      # AI 关键词锚点在这里定义，其余 feed 复用（YAML 锚点必须先定义后引用）
       - id: infoq-cn
         name: InfoQ 中文
         url: https://www.infoq.cn/feed
         authority: A
         # InfoQ 把北京时间标成 GMT，回拨 8 小时还原成 UTC
         published_tz_offset_hours: 8
-        # InfoQ 也发 Java / 数据库等通用开发新闻，同样按标题筛 AI；
-        # 「A；B；C」式的聚合早报信息密度低，整条丢弃。
-        exclude_keywords: &exclude_roundup
-          - "；"
+        # InfoQ 也发 Java / 数据库等通用开发新闻，同样按标题筛 AI
+        exclude_keywords: *exclude_common
         keywords: &ai_keywords
           - AI
           - 人工智能
@@ -112,19 +124,19 @@ sources:
         name: 极客公园
         url: https://www.geekpark.net/rss
         authority: B
-        exclude_keywords: *exclude_roundup
+        exclude_keywords: *exclude_common
         keywords: *ai_keywords
       - id: leiphone
         name: 雷锋网
         url: https://www.leiphone.com/feed
         authority: B
-        exclude_keywords: *exclude_roundup
+        exclude_keywords: *exclude_common
         keywords: *ai_keywords
       - id: juejin
         name: 掘金
         url: https://juejin.cn/rss
         authority: B
-        exclude_keywords: *exclude_roundup
+        exclude_keywords: *exclude_common
         keywords: *ai_keywords
       # 公众号源（机器之心、新智元等，需经 wechat2rss 之类转码）不写进仓库：
       # 在 config/sources.local.yaml 里按同样的 feed 结构追加，加载时会自动合并。

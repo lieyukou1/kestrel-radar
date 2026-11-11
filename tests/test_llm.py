@@ -316,6 +316,65 @@ def test_label_theme_sends_history_to_model(tmp_path, monkeypatch) -> None:
     assert "该话题上次推送于 2026-10-29" in seen["user"]
 
 
+# ---------- screen_candidates ----------
+
+
+def test_screen_candidates_parses_keep_and_reason(tmp_path, monkeypatch) -> None:
+    conn = make_conn(tmp_path)
+    llm = make_llm()
+    seen: dict = {}
+
+    def fake_chat(conn, **kwargs):
+        seen.update(kwargs)
+        return (
+            '{"items": ['
+            '{"id": 1, "dimension": "2 训练与对齐", "keep": false, "reason": "promotional"},'
+            '{"id": 2, "dimension": "6", "keep": "true", "reason": ""}'
+            "]}",
+            None,
+        )
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    result = llm.screen_candidates(
+        conn,
+        [
+            {"id": 1, "title": "标题一", "kind": "blog"},
+            {"id": 2, "title": "标题二", "kind": "blog"},
+        ],
+    )
+
+    assert result[1] == {
+        "dimension": "2 训练与对齐",
+        "keep": False,
+        "reason": "promotional",
+    }
+    assert result[2] == {"dimension": "6 系统与基础设施", "keep": True, "reason": ""}
+    assert seen["stage"] == "tag"
+
+
+def test_screen_candidates_treats_missing_keep_as_true(tmp_path, monkeypatch) -> None:
+    """keep 缺字段不能误伤：一律保留；理由看不懂就原样留着，便于回查。"""
+    conn = make_conn(tmp_path)
+    llm = make_llm()
+    monkeypatch.setattr(
+        llm,
+        "chat",
+        lambda *a, **k: ('{"items": [{"id": 3, "dimension": "1", "reason": "乱写的"}]}', None),
+    )
+
+    assert llm.screen_candidates(conn, [{"id": 3, "title": "t", "kind": "blog"}]) == {
+        3: {"dimension": "1 模型与架构", "keep": True, "reason": "乱写的"}
+    }
+
+
+def test_screen_candidates_returns_empty_on_broken_json(tmp_path, monkeypatch) -> None:
+    conn = make_conn(tmp_path)
+    llm = make_llm()
+    monkeypatch.setattr(llm, "chat", lambda *a, **k: ('{"items": [oops]}', None))
+
+    assert llm.screen_candidates(conn, [{"id": 3, "title": "t", "kind": "blog"}]) == {}
+
+
 # ---------- summarize ----------
 
 

@@ -1157,6 +1157,293 @@ def test_collect_skips_paused_sources(tmp_path: Path) -> None:
     )
 
 
+def test_collect_candidates_drops_pr_titles(tmp_path: Path) -> None:
+    """企业通稿不该占推送名额：标题写着签约/揭牌，通常是公关话术。"""
+    from ai_radar.pipeline.digest import collect_candidates
+
+    config = make_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    pr = add_document(
+        conn,
+        title="某高校与某公司签署战略合作协议",
+        tag="1 模型与架构",
+        status="observing",
+        kind="blog",
+    )
+    kept = add_document(
+        conn,
+        title="一种新的 MoE 路由方法",
+        tag="1 模型与架构",
+        status="observing",
+        kind="blog",
+    )
+
+    ids = [int(item["doc"]["id"]) for item in collect_candidates(conn, config, now=utcnow())]
+
+    assert kept in ids
+    assert pr not in ids
+
+
+def test_needs_body_skips_papers_and_long_abstracts(tmp_path: Path) -> None:
+    from ai_radar.pipeline import digest as digest_mod
+
+    conn = connect(tmp_path / "test.db")
+    init_db(conn)
+    thin = add_document(
+        conn, title="只有标题的博客", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    paper = add_document(
+        conn, title="一篇论文", tag="1 模型与架构", status="observing", kind="paper"
+    )
+    full = repo.insert_document(
+        conn,
+        canonical_id="test:full",
+        kind="forum",
+        title="摘要很完整的讨论",
+        abstract="正文摘要" * 100,
+        url="https://example.com/full",
+        published_at=iso(utcnow()),
+        authority="A",
+        primary_tag="1 模型与架构",
+        tags=["1 模型与架构"],
+    )
+
+    assert digest_mod._needs_body(repo.get_document(conn, thin)) is True
+    assert digest_mod._needs_body(repo.get_document(conn, paper)) is False
+    assert digest_mod._needs_body(repo.get_document(conn, full)) is False
+
+
+def test_digest_summarize_receives_prefetched_body(tmp_path: Path, monkeypatch) -> None:
+    """摘要过短时补抓正文，模型拿到的是正文而不是一句「abstract」。"""
+    from ai_radar.pipeline import digest as digest_mod
+    from ai_radar.pipeline.composer import Block, Composition
+
+    conn = connect(tmp_path / "test.db")
+    init_db(conn)
+    document_id = add_document(
+        conn, title="只有标题的文章", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    documents = {document_id: "抓到的正文内容"}
+    entry = {
+        "doc": repo.get_document(conn, document_id),
+        "score": 0.8,
+        "tag": "1 模型与架构",
+    }
+    monkeypatch.setattr(digest_mod, "collect_candidates", lambda *a, **k: [entry])
+    monkeypatch.setattr(
+        digest_mod.composer,
+        "compose_daily",
+        lambda *a, **k: Composition(
+            kind="daily",
+            blocks=[Block(section="brief", title="快讯", items=[entry])],
+            theme=None,
+        ),
+    )
+    monkeypatch.setattr(
+        digest_mod, "_fetch_body", lambda url, **kwargs: documents[document_id]
+    )
+    seen: list[str] = []
+
+    class FakeLLM:
+        def summarize(self, conn, document):
+            seen.append(str(document["abstract"]))
+            return {"problem": "p", "method": "m", "conclusions": [], "why": "w"}
+
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: FakeLLM())
+    config = SimpleNamespace(
+        llm=SimpleNamespace(),
+        network=SimpleNamespace(proxy=None, mode="overseas-only"),
+        weights={},
+        outbox_dir=tmp_path / "outbox",
+    )
+
+    digest_mod.build_digest(
+        conn,
+        config,
+        notifier=FakeNotifier(config.outbox_dir),
+        digest_date="2026-11-02",
+        kind="daily",
+    )
+
+    assert seen == ["抓到的正文内容"]
+
+
+class ScreenLLM:
+    """只实现候选闸门相关的三个入口，够 build_digest 走完整条链路。"""
+
+    def __init__(self, verdicts: dict[int, dict], *, error: Exception | None = None) -> None:
+        self.verdicts = verdicts
+        self.error = error
+        self.screen_calls = 0
+        self.classify_calls = 0
+
+    def screen_candidates(self, conn, documents):
+        self.screen_calls += 1
+        if self.error is not None:
+            raise self.error
+        return {
+            int(item["id"]): self.verdicts[int(item["id"])]
+            for item in documents
+            if int(item["id"]) in self.verdicts
+        }
+
+    def classify_dimensions(self, conn, documents):
+        self.classify_calls += 1
+        return {}
+
+    def summarize(self, conn, document):
+        return None
+
+
+def test_screen_drops_promotional_before_composition(tmp_path: Path, monkeypatch) -> None:
+    """软文在编排前剔除：席位自动补位，维度沿用闸门结果，不再二次调用。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    pr = add_document(
+        conn,
+        title="某厂商发布一站式解决方案",
+        tag="4 Agent 与应用",
+        status="observing",
+        kind="blog",
+    )
+    kept = add_document(
+        conn,
+        title="新的 MoE 路由方法",
+        tag="1 模型与架构",
+        status="observing",
+        kind="blog",
+    )
+    retag = add_document(
+        conn,
+        title="训练配方改进",
+        tag="4 Agent 与应用",
+        status="observing",
+        kind="blog",
+    )
+    llm = ScreenLLM(
+        {
+            pr: {"dimension": "4 Agent 与应用", "keep": False, "reason": "promotional"},
+            kept: {"dimension": "1 模型与架构", "keep": True, "reason": ""},
+            retag: {"dimension": "2 训练与对齐", "keep": True, "reason": ""},
+        }
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    rows = conn.execute("SELECT document_id FROM digest_items ORDER BY rank").fetchall()
+    assert result["count"] == 2
+    assert {row["document_id"] for row in rows} == {kept, retag}
+    assert llm.screen_calls == 1
+    # 闸门已经给过维度，入选后不应再问一次模型
+    assert llm.classify_calls == 0
+    assert repo.get_document(conn, retag)["primary_tag"] == "2 训练与对齐"
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["screened"]["dropped"] == [
+        {"id": pr, "title": "某厂商发布一站式解决方案", "reason": "promotional"}
+    ]
+
+
+def test_screen_failure_keeps_all_candidates(tmp_path: Path, monkeypatch) -> None:
+    """模型调用失败不能拖垮日报：全部候选照常参与编排。"""
+    from ai_radar.llm.client import LLMError
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    for index in range(3):
+        add_document(
+            conn,
+            title=f"候选内容 {index}",
+            tag="1 模型与架构",
+            status="observing",
+            kind="blog",
+        )
+    llm = ScreenLLM({}, error=LLMError("模型挂了"))
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    assert result["count"] == 3
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["screened"]["dropped"] == []
+
+
+def test_screen_ignored_when_drop_ratio_is_too_high(tmp_path: Path, monkeypatch) -> None:
+    """一次判掉大半说明模型跑偏，整批放行，避免清空日报。"""
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    first = add_document(
+        conn, title="候选一", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    second = add_document(
+        conn, title="候选二", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    llm = ScreenLLM(
+        {
+            first: {"dimension": "1 模型与架构", "keep": False, "reason": "off_topic"},
+            second: {"dimension": "1 模型与架构", "keep": False, "reason": "off_topic"},
+        }
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    assert result["count"] == 2
+    stats = json.loads(repo.get_digest(conn, "2026-10-21")["stats_json"])
+    assert stats["screened"]["dropped"] == []
+
+
+def test_screen_disabled_skips_model(tmp_path: Path, monkeypatch) -> None:
+    from ai_radar.pipeline import digest as digest_mod
+
+    config = make_llm_config(tmp_path)
+    config.weights["screen"] = {"enabled": False}
+    conn = connect(config.db_path)
+    init_db(conn)
+    monkeypatch.setattr(
+        "ai_radar.pipeline.composer.embedding.ensure_vectors", lambda *a, **k: {}
+    )
+    document_id = add_document(
+        conn, title="候选内容", tag="1 模型与架构", status="observing", kind="blog"
+    )
+    llm = ScreenLLM(
+        {document_id: {"dimension": "1 模型与架构", "keep": False, "reason": "promotional"}}
+    )
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+
+    result = build_digest(
+        conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
+    )
+
+    assert result["count"] == 1
+    assert llm.screen_calls == 0
+
+
+
 def test_related_and_compare_cards(tmp_path: Path) -> None:
     from ai_radar.adapters.notify.feishu import build_compare_card, build_related_card
 

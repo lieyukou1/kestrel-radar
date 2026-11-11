@@ -34,6 +34,7 @@ def build_adapter(config: AppConfig, source: SourceConfig) -> SourceAdapter:
             timeout=timeout,
             max_results=int(source.options.get("max_results", 50)),
             query=str(source.options.get("query", "AI")),
+            min_points=int(source.options.get("min_points", 0)),
         )
     if source.kind == "hf_daily":
         return HFDailyAdapter(

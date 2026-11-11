@@ -131,12 +131,7 @@ DIMENSIONS = (
     "8 数据与评测",
 )
 
-TAG_SYSTEM = """你是 AI 领域的技术编辑，负责给即将推送的内容分类。
-用户会给你一批内容（JSON 数组，含 id/title/kind/abstract），请为每条选择唯一的主分类。
-只输出一个 JSON 对象，不要输出 Markdown 或解释：
-{"items": [{"id": 1, "dimension": "2 训练与对齐"}]}
-
-分类只有这八个，dimension 必须逐字使用：
+_DIMENSION_GUIDE = """分类只有这八个，dimension 必须逐字使用：
 1 模型与架构：新模型、网络结构、预训练范式
 2 训练与对齐：训练目标、训练数据与配方、微调、RLHF/对齐、合成数据
 3 推理与加速：量化、蒸馏、KV cache、并行、编译、serving、单机性能优化
@@ -144,7 +139,15 @@ TAG_SYSTEM = """你是 AI 领域的技术编辑，负责给即将推送的内容
 5 多模态与生成：视觉/语音/视频模型、扩散、生成范式本身
 6 系统与基础设施：分布式、集群、存储、调度、硬件、跨机器工程
 7 理论与可解释性：理论分析、缩放律、可解释性、涌现机理
-8 数据与评测：数据集、基准（benchmark）、评估方法、eval harness
+8 数据与评测：数据集、基准（benchmark）、评估方法、eval harness"""
+
+TAG_SYSTEM = (
+    "你是 AI 领域的技术编辑，负责给即将推送的内容分类。\n"
+    "用户会给你一批内容（JSON 数组，含 id/title/kind/abstract），请为每条选择唯一的主分类。\n"
+    "只输出一个 JSON 对象，不要输出 Markdown 或解释：\n"
+    '{"items": [{"id": 1, "dimension": "2 训练与对齐"}]}\n\n'
+    + _DIMENSION_GUIDE
+    + """
 
 判定规则（按优先级）：
 1. 以核心贡献归属，不看应用场景。「用 Agent 做某任务」不算 4，要看贡献是什么：
@@ -153,11 +156,35 @@ TAG_SYSTEM = """你是 AI 领域的技术编辑，负责给即将推送的内容
 3. 单机/算法层性能优化归 3；跨机器/集群工程归 6。
 4. 标题里的热词不代表分类，例如标题含 Agent 但正文讲数据构造，应归 2 或 8。
 5. 拿不准时选最贴近核心贡献的那个，不要留空，也不要编造分类名。"""
+)
 
 TAG_TEMPLATE = """今天要推送的内容（JSON 数组）：
 {payload}
 
 请逐条给出 dimension，数量与输入一致。"""
+
+SCREEN_SYSTEM = (
+    "你是 AI 领域的技术编辑，负责在推送前筛掉不该进日报的内容。\n"
+    "用户会给你一批候选内容（JSON 数组，含 id/title/kind/abstract），请逐条输出：\n"
+    '{"items": [{"id": 1, "dimension": "6 系统与基础设施", "keep": true, "reason": ""}]}\n\n'
+    + _DIMENSION_GUIDE
+    + """
+
+keep 只有下面两种情况填 false：
+- promotional：主体是在卖产品、服务或方案，或企业合作、签约、揭牌、落地仪式类通稿；
+- off_topic：与 AI / 大模型没有实质关系（例如量子硬件、芯片制造工艺、传统行业数字化）。
+
+reason 在 keep=false 时必须填 promotional 或 off_topic 之一（英文小写），keep=true 时留空。
+其余一律 keep=true。只有标题、无法判断时也 keep=true。
+财经与行业观点、评论、复盘不算 promotional，照常保留。
+以核心贡献判断 dimension，标题里的热词不代表分类。
+不要编造分类名或原因。"""
+)
+
+SCREEN_TEMPLATE = """今天的候选内容（JSON 数组）：
+{payload}
+
+请逐条给出 dimension / keep / reason，数量与输入一致。"""
 
 
 def render_reduce_prompt(**kwargs: str) -> str:

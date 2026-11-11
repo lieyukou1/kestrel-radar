@@ -56,12 +56,16 @@ class HackerNewsAdapter:
         timeout: float = 30.0,
         max_results: int = 50,
         query: str = "AI",
+        min_points: int = 0,
     ) -> None:
         self.source_id = source_id
         self.proxy = proxy
         self.timeout = timeout
         self.max_results = max_results
         self.query = query
+        # Algolia 的 search_by_date 按时间倒序，没有热度排序；1-2 分的帖子
+        # 基本是刚发出来还没人看，进候选池只会占名额，直接按分数下限滤掉。
+        self.min_points = min_points
 
     def fetch(self) -> list[RawItem]:
         params = {
@@ -80,6 +84,8 @@ class HackerNewsAdapter:
             title = (hit.get("title") or "").strip()
             object_id = hit.get("objectID")
             if not title or not object_id:
+                continue
+            if int(hit.get("points") or 0) < self.min_points:
                 continue
             url = hit.get("url") or f"https://news.ycombinator.com/item?id={object_id}"
             items.append(

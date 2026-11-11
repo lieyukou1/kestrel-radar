@@ -13,6 +13,8 @@ from ..store import repo
 from ..util import utcnow
 from .prompts import (
     DIMENSIONS,
+    SCREEN_SYSTEM,
+    SCREEN_TEMPLATE,
     SUMMARY_SYSTEM,
     SUMMARY_TEMPLATE,
     TAG_SYSTEM,
@@ -24,6 +26,10 @@ from .prompts import (
 MAX_CONTENT_CHARS = 6000
 MAX_TAG_DOCS = 12
 MAX_TAG_ABSTRACT = 320
+# 推送前的候选闸门只看分数最高的一批，条数比重打标多，单独给上限。
+MAX_SCREEN_DOCS = 30
+# 模型只允许用这两个理由剔除内容；其他理由不认，避免「今天心情不好」式的自由发挥。
+_SCREEN_REASONS = {"promotional", "off_topic"}
 
 # 模型给出的事件时间只接受「年-月」或「年-月-日」，其余一律丢弃，避免脏字符串上卡片。
 _WHEN_PATTERN = re.compile(r"^\d{4}(-\d{2}){0,2}$")
@@ -91,6 +97,26 @@ def _clean_dimension(value: Any) -> str:
         if text == dimension.split()[0]:
             return dimension
     return ""
+
+
+def _clean_keep(value: Any) -> bool:
+    """只有明确的否才丢弃；缺字段、看不懂一律按保留处理，不能让筛选误伤日报。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "no", "0"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return True
+
+
+def _clean_screen_reason(value: Any) -> str:
+    """理由只用于回查；规范值优先，模型若写中文也照收，别让它变成空串。"""
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    lowered = text.lower()
+    return lowered if lowered in _SCREEN_REASONS else text[:40]
 
 
 def estimate_cost(
@@ -287,6 +313,70 @@ class DeepSeekLLM:
             dimension = _clean_dimension(item.get("dimension"))
             if dimension:
                 result[document_id] = dimension
+        return result
+
+    def screen_candidates(
+        self, conn: sqlite3.Connection, documents: list[dict]
+    ) -> dict[int, dict]:
+        """推送前的候选闸门：一次调用同时给出维度、去留与原因。
+
+        documents 每项含 id/title/kind/abstract。返回
+        {document_id: {"dimension": str, "keep": bool, "reason": str}}；
+        解析失败返回空字典，调用方按「全部保留」处理，不让模型故障卡住日报。
+        """
+        if not documents:
+            return {}
+        payload = json.dumps(
+            [
+                {
+                    "id": int(item["id"]),
+                    "title": str(item.get("title") or "")[:120],
+                    "kind": str(item.get("kind") or ""),
+                    "abstract": str(item.get("abstract") or "")[:MAX_TAG_ABSTRACT],
+                }
+                for item in documents[:MAX_SCREEN_DOCS]
+            ],
+            ensure_ascii=False,
+        )
+        text, _ = self.chat(
+            conn,
+            stage="tag",
+            system=SCREEN_SYSTEM,
+            user=SCREEN_TEMPLATE.format(payload=payload),
+            # 每条一行 JSON，条数比分类多，额度跟着放大，否则会被截断。
+            max_tokens=3000,
+        )
+        try:
+            data = parse_json_object(text)
+        except LLMError:
+            # 思考模型偶尔把 JSON 截断（只输出半截数组），放大额度再要一次。
+            retry_text, _ = self.chat(
+                conn,
+                stage="tag",
+                system=SCREEN_SYSTEM,
+                user=SCREEN_TEMPLATE.format(payload=payload),
+                max_tokens=4000,
+            )
+            try:
+                data = parse_json_object(retry_text)
+            except LLMError:
+                return {}
+        items = data.get("items")
+        if not isinstance(items, list):
+            return {}
+        result: dict[int, dict] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                document_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            result[document_id] = {
+                "dimension": _clean_dimension(item.get("dimension")),
+                "keep": _clean_keep(item.get("keep")),
+                "reason": _clean_screen_reason(item.get("reason")),
+            }
         return result
 
     def summarize(self, conn: sqlite3.Connection, document: sqlite3.Row) -> dict | None:

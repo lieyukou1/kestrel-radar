@@ -75,6 +75,15 @@ blockbuster:
   hf_upvotes: 120
   repo_stars_per_day: 500
 
+# 推送前的候选闸门：让模型先判「这条值不值得推」，剔掉企业软文与 AI 无关内容，
+# 同时给出维度，入选后不再重复调用。
+screen:
+  enabled: true
+  # 只判分数最高的这一批；再往后的条目进不了日报前几席
+  top_n: 30
+  # 一次判掉超过一半说明模型跑偏，整批放行，避免清空日报
+  max_drop_ratio: 0.5
+
 selection:
   # 同维度最多 3 条，避免一天全是一个方向
   max_per_tag: 3

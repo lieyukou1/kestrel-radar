@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai_radar.adapters.sources.github import GitHubAdapter
+from ai_radar.adapters.sources.hackernews import HackerNewsAdapter
 from ai_radar.adapters.sources.lobsters import LobstersAdapter, parse_comments
 from ai_radar.adapters.sources.rss import RSSAdapter, match_keywords
 from ai_radar.config import PROJECT_ROOT, ConfigError, load_config
@@ -250,3 +251,36 @@ def test_lobsters_comments_keep_top_level_and_skip_deleted() -> None:
         ]
     }
     assert parse_comments(data) == ["这是一条足够长的正常评论内容，用来测试评论提炼"]
+
+
+def hn_hit(object_id: str, *, points: int) -> dict:
+    return {
+        "objectID": object_id,
+        "title": f"Story {object_id}",
+        "url": f"https://example.com/{object_id}",
+        "points": points,
+        "num_comments": 3,
+        "created_at": "2026-11-10T09:00:00Z",
+        "author": "alice",
+    }
+
+
+def test_hackernews_parse_drops_posts_below_min_points() -> None:
+    data = {"hits": [hn_hit("cold", points=2), hn_hit("warm", points=120)]}
+
+    assert [item.external_id for item in HackerNewsAdapter(min_points=20).parse(data)] == [
+        "warm"
+    ]
+    # 默认不下限，fixture 与直接调用不受影响
+    assert [item.external_id for item in HackerNewsAdapter().parse(data)] == [
+        "cold",
+        "warm",
+    ]
+
+
+def test_hackernews_min_points_is_configured() -> None:
+    from ai_radar.jobs.collect import build_adapter
+
+    config = load_config(PROJECT_ROOT)
+    source = next(item for item in config.sources if item.id == "hackernews")
+    assert build_adapter(config, source).min_points == 20
