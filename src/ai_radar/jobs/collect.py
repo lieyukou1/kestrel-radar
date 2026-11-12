@@ -99,8 +99,14 @@ def run_collect(conn: sqlite3.Connection, config: AppConfig) -> dict:
         try:
             adapter = build_adapter(config, source)
             items = adapter.fetch()
+            profile = getattr(config, "domain", None)
             for item in items:
-                merge_item(conn, item, item.authority or source.authority)
+                merge_item(
+                    conn,
+                    item,
+                    item.authority or source.authority,
+                    profile=profile,
+                )
             stats["sources"][source.id] = {"fetched": len(items)}
             stats["items"] += len(items)
         except Exception as exc:  # 单源失败不影响其他来源

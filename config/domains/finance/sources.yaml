@@ -1,0 +1,123 @@
+network:
+  # 默认直连；需要代理时用 .env 的 AI_RADAR_PROXY 覆盖（例如 http://127.0.0.1:7897），
+  # 不要把个人代理地址写进仓库。
+  proxy: ""
+  mode: overseas-only
+  timeout_seconds: 60
+
+sources:
+  - id: finance_cn
+    kind: rss
+    name: 中文财经媒体
+    authority: A
+    region: domestic
+    enabled: true
+    max_results: 30
+    # 财经快讯时效短，三天前的直接丢掉
+    max_age_days: 3
+    feeds:
+      - id: wallstreetcn
+        name: 华尔街见闻
+        url: https://dedicated.wallstreetcn.com/rss.xml
+        authority: A
+
+  # 海外财经媒体：栏目本身以财经为主；综合台（CNBC / FT 首页）按标题再筛一遍。
+  - id: finance_en
+    kind: rss
+    name: 海外财经媒体
+    authority: B
+    region: overseas
+    enabled: true
+    max_results: 30
+    max_age_days: 7
+    feeds:
+      - id: cnbc
+        name: CNBC
+        url: https://www.cnbc.com/id/100003114/device/rss/rss.html
+        authority: B
+        keywords: &finance_keywords
+          - market
+          - markets
+          - stock
+          - stocks
+          - fed
+          - federal reserve
+          - inflation
+          - economy
+          - economic
+          - earnings
+          - tariff
+          - tariffs
+          - trade
+          - bank
+          - banks
+          - bitcoin
+          - crypto
+          - oil
+          - dollar
+          - bond
+          - bonds
+          - ipo
+          - merger
+          - acquisition
+          - jobs
+          - gdp
+          - cpi
+          - interest rate
+          - treasury
+          - investor
+          - investors
+          - wall street
+          - nasdaq
+          - dow
+          - s&p
+      - id: marketwatch
+        name: MarketWatch
+        url: https://feeds.content.dowjones.io/public/rss/mw_topstories
+        authority: B
+      - id: ft
+        name: Financial Times
+        # 首页含世界新闻与观点，按财经关键词筛
+        url: https://www.ft.com/rss/home
+        authority: A
+        keywords: *finance_keywords
+      - id: economist-finance
+        name: The Economist
+        url: https://www.economist.com/finance-and-economics/rss.xml
+        authority: A
+      - id: bbc-business
+        name: BBC Business
+        url: https://feeds.bbci.co.uk/news/business/rss.xml
+        authority: B
+      - id: guardian-business
+        name: Guardian Business
+        url: https://www.theguardian.com/uk/business/rss
+        authority: B
+      - id: nyt-business
+        name: NYT Business
+        url: https://rss.nytimes.com/services/xml/rss/nyt/Business.xml
+        authority: B
+
+  # 官方机构：一手政策与执法信息，豁免软文判定（见 domain.yaml 的 official_sources）。
+  - id: official_finance
+    kind: rss
+    name: 财经官方机构
+    authority: A
+    region: overseas
+    enabled: true
+    max_results: 20
+    # 官方发布频率低，窗口放宽到两周；已推送文档另有 30 天去重
+    max_age_days: 14
+    feeds:
+      - id: fed
+        name: Federal Reserve
+        url: https://www.federalreserve.gov/feeds/press_all.xml
+        authority: A
+      - id: sec
+        name: SEC
+        url: https://www.sec.gov/news/pressreleases.rss
+        authority: A
+      - id: ecb
+        name: ECB
+        url: https://www.ecb.europa.eu/rss/press.html
+        authority: A

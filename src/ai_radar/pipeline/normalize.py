@@ -7,6 +7,7 @@ from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from ..adapters.sources.base import RawItem
+from ..domain.profile import DomainProfile
 from ..store import repo
 from ..util import iso, utcnow
 from .entity_conflict import titles_conflict
@@ -71,7 +72,13 @@ def canonical_id(item: RawItem) -> str:
     return canonical_from_url(item.url)
 
 
-def merge_item(conn: sqlite3.Connection, item: RawItem, authority: str) -> int:
+def merge_item(
+    conn: sqlite3.Connection,
+    item: RawItem,
+    authority: str,
+    *,
+    profile: DomainProfile | None = None,
+) -> int:
     raw_id = repo.insert_raw_item(
         conn,
         source_id=item.source_id,
@@ -111,7 +118,7 @@ def merge_item(conn: sqlite3.Connection, item: RawItem, authority: str) -> int:
             repo.update_document_authority(conn, document_id, authority)
         return document_id
 
-    primary_tag, tags = classify(item)
+    primary_tag, tags = classify(item, profile=profile)
     document_id = repo.insert_document(
         conn,
         canonical_id=cid,

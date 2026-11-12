@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ai_radar.adapters.sources.base import RawItem
-from ai_radar.config import PROJECT_ROOT, load_config
+from ai_radar.config import PROJECT_ROOT, SourceConfig, load_config
 from ai_radar.domain.profile import DomainError, load_profile
 from ai_radar.pipeline import tagging
 
@@ -87,3 +87,72 @@ def test_broken_pack_fails_fast(tmp_path: Path) -> None:
     )
     with pytest.raises(DomainError):
         load_profile(tmp_path, "broken")
+
+
+def test_finance_pack_loads_with_its_own_sources_and_weights() -> None:
+    config = load_config(PROJECT_ROOT, domain="finance")
+    assert config.domain is not None
+    assert config.domain.id == "finance"
+    assert config.domain.tags[0] == "1 宏观经济"
+    assert {source.id for source in config.sources} == {
+        "finance_cn",
+        "finance_en",
+        "official_finance",
+    }
+    assert config.db_path == PROJECT_ROOT / "data" / "domains" / "finance" / "ai_radar.db"
+    # 领域覆盖要深合并进全局权重：财经热度信号少，权威与时效权重更高。
+    assert config.weights["scoring"]["authority"] == 0.35
+    assert config.weights["maturity_hours"]["blog"] == 2
+    assert config.weights["screen"]["official_sources"] == ["official_finance"]
+    # 未覆盖的全局默认仍在。
+    assert config.weights["selection"]["novelty_days"] == 30
+
+
+def test_finance_pack_drives_actions_and_tagging() -> None:
+    profile = load_profile(PROJECT_ROOT, "finance")
+    assert profile.action_of("美联储宣布降息 25 个基点") == "policy"
+    assert profile.action_of("两家公司宣布并购") == "funding"
+    assert profile.action_of("英伟达盘后暴跌 8%") == "incident"
+    assert tagging.classify(_item("美联储宣布降息 25 个基点"), profile=profile)[0] == "2 货币政策"
+    assert tagging.classify(_item("英伟达发布财报，营收超预期"), profile=profile)[0] == "4 公司财报与交易"
+
+
+def test_collect_uses_domain_profile_for_tagging(tmp_path: Path, monkeypatch) -> None:
+    """采集入库必须按当前领域打标，否则 finance 的文档会落进 AI 分类。"""
+    from ai_radar.jobs import collect as collect_mod
+    from ai_radar.store.db import connect, init_db
+
+    config = load_config(PROJECT_ROOT, domain="finance")
+    config.root = tmp_path
+    config.db_path = tmp_path / "test.db"
+    config.outbox_dir = tmp_path / "outbox"
+    config.sources = [
+        SourceConfig(
+            id="finance_cn",
+            kind="rss",
+            name="测试财经源",
+            authority="A",
+            region="domestic",
+        )
+    ]
+
+    class FakeAdapter:
+        def fetch(self) -> list[RawItem]:
+            return [
+                RawItem(
+                    source_id="finance_cn",
+                    external_id="x",
+                    url="https://example.com/x",
+                    title="美联储宣布降息 25 个基点",
+                    kind="blog",
+                )
+            ]
+
+    monkeypatch.setattr(collect_mod, "build_adapter", lambda *args, **kwargs: FakeAdapter())
+    conn = connect(config.db_path)
+    init_db(conn)
+    stats = collect_mod.run_collect(conn, config)
+
+    assert stats["items"] == 1
+    row = conn.execute("SELECT primary_tag FROM documents").fetchone()
+    assert row["primary_tag"] == "2 货币政策"

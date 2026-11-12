@@ -1,0 +1,564 @@
+# 金融领域包：只放领域数据，不放代码。
+# 分类名会原样写进 documents.primary_tag / preferences / rotation，改名等于改数据口径。
+id: finance
+name: 金融市场观察
+
+# 8 个主分类：顺序决定维度轮转与意图白名单的先后，不要随意调整。
+taxonomy:
+  - name: 1 宏观经济
+    description: GDP、通胀、就业、消费与增长数据
+    keywords:
+      - gdp
+      - cpi
+      - inflation
+      - deflation
+      - pmi
+      - ppi
+      - payrolls
+      - jobs report
+      - unemployment
+      - recession
+      - consumer confidence
+      - retail sales
+      - housing starts
+      - economic growth
+      - 通胀
+      - 通缩
+      - 就业
+      - 失业
+      - 非农
+      - 经济增长
+      - 零售
+      - 房地产
+      - 消费者信心
+  - name: 2 货币政策
+    description: 央行决议、利率、流动性、QE/缩表
+    keywords:
+      - federal reserve
+      - central bank
+      - interest rate
+      - rate cut
+      - rate hike
+      - monetary policy
+      - quantitative easing
+      - balance sheet
+      - lpr
+      - 降息
+      - 加息
+      - 降准
+      - 利率
+      - 央行
+      - 货币政策
+      - 流动性
+      - 缩表
+      - 扩表
+  - name: 3 市场与行情
+    description: 股债汇商品、指数与资金流向
+    keywords:
+      - stock
+      - stocks
+      - bond
+      - bonds
+      - yield
+      - treasury
+      - oil
+      - gold
+      - bitcoin
+      - cryptocurrency
+      - dollar
+      - euro
+      - yen
+      - nasdaq
+      - s&p
+      - dow
+      - rally
+      - selloff
+      - 股市
+      - 债市
+      - 汇市
+      - 原油
+      - 黄金
+      - 比特币
+      - 美元
+      - 美股
+      - 港股
+      - A股
+      - 指数
+      - 纳指
+      - 标普
+      - 道指
+  - name: 4 公司财报与交易
+    description: 财报、指引、并购、IPO、回购与估值
+    keywords:
+      - earnings
+      - revenue
+      - profit
+      - guidance
+      - merger
+      - acquisition
+      - ipo
+      - buyback
+      - dividend
+      - valuation
+      - funding round
+      - stake
+      - 财报
+      - 业绩
+      - 营收
+      - 利润
+      - 指引
+      - 并购
+      - 收购
+      - 上市
+      - 融资
+      - 估值
+      - 回购
+      - 分红
+      - 入股
+      - 增持
+      - 减持
+  - name: 5 监管与合规
+    description: 监管处罚、诉讼、反垄断与牌照
+    keywords:
+      - regulation
+      - regulator
+      - antitrust
+      - lawsuit
+      - probe
+      - fine
+      - penalty
+      - compliance
+      - 监管
+      - 处罚
+      - 罚款
+      - 调查
+      - 反垄断
+      - 诉讼
+      - 合规
+      - 法案
+      - 牌照
+      - 禁令
+  - name: 6 金融科技与加密
+    description: 支付、稳定币、区块链与数字银行
+    keywords:
+      - fintech
+      - stablecoin
+      - crypto
+      - blockchain
+      - defi
+      - tokenization
+      - payment
+      - digital bank
+      - 金融科技
+      - 稳定币
+      - 加密货币
+      - 区块链
+      - 支付
+      - 数字银行
+      - 代币
+  - name: 7 银行与信贷
+    description: 银行经营、信贷、存款、保险与房贷
+    keywords:
+      - bank
+      - banks
+      - lending
+      - credit
+      - deposit
+      - mortgage
+      - insurance
+      - loan
+      - 银行
+      - 贷款
+      - 信贷
+      - 存款
+      - 不良
+      - 保险
+      - 房贷
+      - 按揭
+  - name: 8 全球贸易与地缘
+    description: 关税、制裁、出口管制、供应链与能源
+    keywords:
+      - tariff
+      - tariffs
+      - sanctions
+      - trade war
+      - export controls
+      - supply chain
+      - opec
+      - 关税
+      - 制裁
+      - 贸易战
+      - 出口
+      - 进口
+      - 供应链
+      - 能源
+      - 地缘
+      - 脱钩
+
+# 内容类型 → 默认分类（标题一个关键词都没命中时用）
+defaults:
+  blog: 3 市场与行情
+  forum: 3 市场与行情
+  paper: 1 宏观经济
+  repo: 6 金融科技与加密
+
+entities:
+  # 具体机构/公司/产品名：命中即视为实体
+  latin:
+    - fed
+    - ecb
+    - boj
+    - pboc
+    - sec
+    - cftc
+    - fdic
+    - treasury
+    - imf
+    - oecd
+    - bis
+    - opec
+    - nasdaq
+    - nyse
+    - goldman
+    - jpmorgan
+    - blackrock
+    - berkshire
+    - citadel
+    - bridgewater
+    - softbank
+    - altman
+    - musk
+    - hsbc
+    - ubs
+    - barclays
+    - citigroup
+    - wells
+    - bofa
+    - santander
+    - apple
+    - nvidia
+    - tesla
+    - microsoft
+    - amazon
+    - meta
+    - alphabet
+    - anthropic
+    - openai
+    - coreweave
+    - palantir
+    - oracle
+    - broadcom
+    - qualcomm
+    - micron
+    - asml
+    - boeing
+    - intel
+    - tsmc
+    - samsung
+    - toyota
+    - honda
+    - ford
+    - rivian
+    - exxon
+    - chevron
+    - walmart
+    - disney
+    - netflix
+    - bitcoin
+    - ethereum
+    - coinbase
+    - binance
+    - tether
+    - solana
+    - visa
+    - mastercard
+    - paypal
+    - stripe
+    - affirm
+  cjk:
+    - 美联储
+    - 欧洲央行
+    - 日本央行
+    - 英国央行
+    - 中国人民银行
+    - 证监会
+    - 金融监管总局
+    - 银保监会
+    - 财政部
+    - 商务部
+    - 发改委
+    - 白宫
+    - 国会
+    - 高盛
+    - 摩根大通
+    - 摩根士丹利
+    - 贝莱德
+    - 伯克希尔
+    - 巴菲特
+    - 黄仁勋
+    - 马斯克
+    - 苏姿丰
+    - 库克
+    - 陈立武
+    - 奥特曼
+    - 孙正义
+    - 软银
+    - 博通
+    - 甲骨文
+    - 高通
+    - 美光
+    - 阿斯麦
+    - 福特
+    - 本田
+    - 索尼
+    - 通用汽车
+    - 纳斯达克
+    - 纽交所
+    - 标普
+    - 道琼斯
+    - 华尔街
+    - 瑞银
+    - 汇丰
+    - 花旗
+    - 德意志银行
+    - 苹果
+    - 英伟达
+    - 特斯拉
+    - 微软
+    - 亚马逊
+    - 谷歌
+    - 台积电
+    - 三星
+    - 丰田
+    - 波音
+    - 比特币
+    - 以太坊
+    - 稳定币
+  # 会议/论坛名：会被多篇共享，但不代表「同一件事」
+  venue:
+    - fomc
+    - davos
+    - wef
+    - g20
+    - g7
+    - apec
+    - cop
+  # 通用词：出现频率高但不能代表「一件事」
+  generic:
+    - gdp
+    - cpi
+    - pmi
+    - ppi
+    - pce
+    - etf
+    - etfs
+    - ipo
+    - ceo
+    - cfo
+    - coo
+    - eps
+    - roi
+    - yoy
+    - qoq
+    - ebitda
+    - ebit
+    - fcf
+    - esg
+    - cds
+    - ai
+    - us
+    - uk
+    - eu
+    - un
+    - who
+    - wto
+    - nato
+    - qe
+    - qt
+    - market
+    - markets
+    - stock
+    - stocks
+    - economy
+    - economic
+    - finance
+    - financial
+    - business
+    - company
+    - companies
+    - bank
+    - banks
+    - news
+    - global
+    - world
+    - report
+    - reports
+    - data
+    - growth
+    - trade
+    - policy
+    - rate
+    - rates
+    - price
+    - prices
+    - index
+    - indexes
+    - dollar
+    - euro
+    - yen
+    - yuan
+    - the
+    - and
+    - for
+    - with
+    - from
+    - your
+    - you
+    - this
+    - that
+    - are
+    - not
+    - all
+    - can
+    - its
+    - our
+    - we
+    - it
+    - in
+    - of
+    - to
+    - on
+    - as
+    - at
+    - by
+    - new
+    - how
+    - why
+    - what
+    - after
+    - before
+    - over
+    - amid
+    - says
+    - say
+    - could
+    - would
+    - will
+    - may
+    - more
+    - than
+    - into
+    - up
+    - down
+    - out
+    - off
+    - top
+    - first
+    - last
+  generic_cjk:
+    - 市场
+    - 经济
+    - 股票
+    - 股市
+    - 债券
+    - 基金
+    - 投资
+    - 银行
+    - 公司
+    - 行业
+    - 数据
+    - 报告
+    - 金融
+    - 财经
+    - 全球
+    - 中国
+    - 美国
+    - 日本
+    - 欧洲
+    - 英国
+    - 央行
+    - 政府
+    - 政策
+    - 利率
+    - 汇率
+    - 价格
+    - 贸易
+    - 关税
+    - 企业
+    - 业绩
+    - 营收
+    - 利润
+    - 财报
+    - 博鳌
+    - 达沃斯
+    - 进博会
+    - 服贸会
+
+# 事件键里的动作分类：只用于跨天认出同一件事和兜底分组，不参与打分。
+# 顺序即优先级（先命中者生效）。
+actions:
+  - name: incident
+    pattern: 暴跌|暴涨|跳水|熔断|违约|破产|暴雷|挤兑|停牌|诉讼|起诉|调查|处罚|罚款|制裁|裁员|召回|plunge|plummet|crash|default|bankrupt|probe|lawsuit|fine|sanction
+    ignore_case: true
+  - name: policy
+    pattern: 加息|降息|降准|上调|下调|利率决议|缩表|扩表|量化宽松|救市|刺激|rate hike|rate cut|raises rates|cuts rates|quantitative easing|taper
+    ignore_case: true
+  - name: funding
+    pattern: 融资|估值|IPO|上市|募资|增发|回购|分红|并购|收购|入股|增持|减持|merger|acquisition|buyback|dividend|valuation|stake
+    ignore_case: true
+  - name: earnings
+    pattern: 财报|业绩|营收|利润|指引|超预期|不及预期|earnings|revenue|profit|guidance|beats|misses
+    ignore_case: true
+  - name: regulation
+    pattern: 监管|合规|法案|新规|牌照|获批|禁令|regulation|regulator|approval|license|ban
+    ignore_case: true
+  - name: partnership
+    pattern: 合作|签约|结盟|合资|联手|partnership|joint venture
+    ignore_case: true
+  - name: release
+    pattern: 发布|推出|公布|上线|launch|release|unveils
+    ignore_case: true
+  - name: market
+    pattern: 上涨|下跌|大涨|大跌|反弹|回调|新高|新低|rally|selloff|record high|record low|surge
+    ignore_case: true
+default_action: other
+
+# 领域语气：替换提示词里的「你是 XXX」与筛选口径，其余 JSON 约束仍在代码里。
+prompts:
+  summary_persona: 金融领域的研究助理
+  discussion_persona: 金融领域的社区观察员
+  deep_read_persona: 金融领域的精读助手
+  editor_persona: 金融领域的主编
+  community_persona: 财经编辑助手
+  off_topic: 与宏观经济、金融市场、公司经营没有实质关系（例如纯科技产品评测、体育娱乐、生活方式）
+  promotional: 主体是在卖理财产品、荐股、拉群卖课，或企业合作、签约、揭牌类通稿
+  official_examples: 美联储、SEC、欧洲央行、IMF
+  dimension_intro: 分类只有这八个，dimension 必须逐字使用：
+
+# 领域级权重覆盖：与 config/weights.yaml 深合并，留空表示沿用全局默认。
+weights_overrides:
+  # 财经源没有点赞/星数，热度信号稀疏；加权给权威与时效。
+  scoring:
+    authority: 0.35
+    heat: 0.10
+    recency: 0.25
+    novelty: 0.20
+    preference: 0.10
+  # 财经新闻时效强：12 小时成熟窗口会让早间日报错过昨夜消息。
+  maturity_hours:
+    blog: 2
+    forum: 2
+    paper: 2
+    repo: 2
+  half_life_hours:
+    blog: 24
+    forum: 24
+  topics:
+    # 财经事件以「当天/隔夜」为主，96 小时只会把旧闻带回日报。
+    event_window_hours: 48
+    standalone: 30
+    standalone_min_score: 0.4
+  screen:
+    # 官方机构发布的是政策与执法信息，豁免「软文」判定，off_topic 照剔。
+    official_sources:
+      - official_finance
