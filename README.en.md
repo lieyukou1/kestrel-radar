@@ -146,7 +146,9 @@ collection breadth.
 
 | Channel | Command | Capabilities |
 |---|---|---|
-| Feishu | `serve --channel feishu` | interactive cards, button callbacks, natural-language commands |
+| Feishu notice (default) | `serve --channel feishu-notice` | one short message with the web link; long connection and card interactions stay on |
+| Feishu full cards | `serve --channel feishu` | full event cards + button callbacks (legacy, still available) |
+| No delivery | `serve --channel none` | generate and store only; read it in the web UI |
 | Webhook | `serve --channel webhook` | one-way; `generic / slack / discord / dingtalk / feishu` payloads |
 | Local files | `serve --channel fake` | writes `data/domains/<id>/outbox/*.md`, no credentials needed |
 
@@ -186,7 +188,7 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 | `collect` | fetch all enabled sources |
 | `digest --kind daily\|weekly` | build and deliver a digest (`--preview` to rehearse) |
 | `run` | `collect` + `digest`, suitable for cron |
-| `serve --channel feishu\|webhook\|fake` | scheduler, deep-read worker, vector backfill |
+| `serve --channel feishu-notice\|feishu\|none\|webhook\|fake` | scheduler, deep-read worker, vector backfill; Feishu notice by default |
 | `api --host 127.0.0.1 --port 8765` | local Web API (FastAPI) for the web UI |
 | `status [--format json\|table]` | documents, status distribution, last-7-day sources / cost / deliveries; `table` for a human-readable view |
 | `favorites` / `prefs` | favorites / preferences |
@@ -208,7 +210,7 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 | `config/domains/<id>/sources.local.yaml` | optional private sources, gitignored, merged at load time |
 | `config/weights.yaml` | scoring weights, momentum, maturity windows, cadence |
 | `config/models.yaml` | model names, pricing, daily budget |
-| `.env` | credentials and runtime overrides (proxy, webhook) |
+| `.env` | credentials and runtime overrides (proxy, webhook, `AI_RADAR_WEB_URL`) |
 
 The proxy is empty by default; set `AI_RADAR_PROXY` when needed, so personal network settings
 never enter the repo.
@@ -235,6 +237,9 @@ python -m ai_radar api --port 8765
 
 Six pages: digest (events → articles), archive, library, ask, status, settings; switch domains
 in the top-right corner. During development use `npm run dev` (port 5173, `/api` proxied to 8765).
+
+Feishu now sends a single notice by default; the link comes from `AI_RADAR_WEB_URL`
+(default `http://127.0.0.1:8765`). Use `serve --channel feishu` for the legacy full cards.
 
 ## Web API
 

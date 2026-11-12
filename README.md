@@ -156,7 +156,9 @@ Kestrel Radar 的差异点是「单用户 + 本地优先 + 事件级记忆 + 深
 
 | 渠道 | 命令 | 能力 |
 |---|---|---|
-| 飞书 | `serve --channel feishu` | 交互卡片、按钮回调、自然语言指令（一等公民） |
+| 飞书通知（默认） | `serve --channel feishu-notice` | 只发一条带网页链接的摘要；长连接与卡片交互保留 |
+| 飞书完整卡片 | `serve --channel feishu` | 完整事件卡片 + 按钮回调（旧行为，仍可用） |
+| 不投递 | `serve --channel none` | 只生成写库，网页查看 |
 | Webhook | `serve --channel webhook` | 单向推送；支持 `generic / slack / discord / dingtalk / feishu` |
 | 本地文件 | `serve --channel fake` | 写到 `data/domains/<id>/outbox/*.md`，无凭据试跑与调试 |
 
@@ -199,7 +201,7 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 | `collect` | 拉取所有启用来源 |
 | `digest --kind daily\|weekly` | 生成并投递当期内容（`--preview` 预演） |
 | `run` | `collect` + `digest`，适合 cron |
-| `serve --channel feishu\|webhook\|fake` | 常驻：定时采集、精读 worker、向量回填 |
+| `serve --channel feishu-notice\|feishu\|none\|webhook\|fake` | 常驻：定时采集、精读 worker、向量回填；默认飞书通知 |
 | `api --host 127.0.0.1 --port 8765` | 启动本地 Web API（FastAPI），供网页端读取日报/事件/归档 |
 | `status [--format json\|table]` | 文档数、状态分布、最近 7 天的源/花费/推送；`table` 输出人读表格 |
 | `favorites` / `prefs` | 收藏夹 / 偏好设置 |
@@ -221,7 +223,7 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 | `config/domains/<id>/sources.local.yaml` | 可选，本地私有信源，不入库，加载时与上者合并 |
 | `config/weights.yaml` | 打分权重、热度动量、成熟窗口、推送节奏 |
 | `config/models.yaml` | 模型名、单价、每日预算 |
-| `.env` | 凭据与运行期覆盖（代理、Webhook） |
+| `.env` | 凭据与运行期覆盖（代理、Webhook、`AI_RADAR_WEB_URL`） |
 
 代理默认留空（直连），需要时用 `AI_RADAR_PROXY` 覆盖，不把个人网络配置写进仓库。
 
@@ -244,6 +246,9 @@ python -m ai_radar api --port 8765
 
 六个页面：日报（事件 / 文章两级）、归档、知识库、问答、状态、设置；右上角切换领域。
 开发期用 `npm run dev`（5173 端口，`/api` 自动代理到 8765）。
+
+飞书默认只发一条通知，链接由 `AI_RADAR_WEB_URL` 决定（默认 `http://127.0.0.1:8765`）；
+需要继续推完整卡片时用 `serve --channel feishu`。
 
 ## Web API
 
