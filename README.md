@@ -65,7 +65,7 @@ Kestrel Radar 围绕这三点做的：**去重不是字符串匹配，是实体�
 | 一手 | OpenAI、DeepMind、Google AI、MSR、BAIR、NVIDIA、Apple ML、HF 官方博客 | 独立成源，避免二手转述替官方说话；自有产品公告豁免「软文」判定 |
 | 中文 | 量子位、InfoQ、极客公园、雷锋网、掘金、科学空间 | 标题 AI 关键词过滤 + 时效窗口 |
 | 海外 | The Decoder、TechCrunch AI | 事件优先需要独立来源来支撑覆盖度 |
-| 私有 | `config/sources.local.yaml` | 公众号等个人订阅源，不入库 |
+| 私有 | `config/domains/<id>/sources.local.yaml` | 公众号等个人订阅源，不入库 |
 
 每个来源独立游标、独立失败，单源挂掉不影响其他源；原始 payload 全量落库，可回溯、可重放。
 
@@ -158,7 +158,7 @@ Kestrel Radar 的差异点是「单用户 + 本地优先 + 事件级记忆 + 深
 |---|---|---|
 | 飞书 | `serve --channel feishu` | 交互卡片、按钮回调、自然语言指令（一等公民） |
 | Webhook | `serve --channel webhook` | 单向推送；支持 `generic / slack / discord / dingtalk / feishu` |
-| 本地文件 | `serve --channel fake` | 写到 `data/outbox/*.md`，无凭据试跑与调试 |
+| 本地文件 | `serve --channel fake` | 写到 `data/domains/<id>/outbox/*.md`，无凭据试跑与调试 |
 
 调度器、精读 worker、向量回填与渠道完全解耦；加新渠道只需要实现一个 `Notifier`，
 不用碰流水线。
@@ -215,13 +215,16 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 
 | 文件 | 作用 |
 |---|---|
-| `config/sources.yaml` | 信源、代理、单源上限、关键词过滤 |
-| `config/sources.local.yaml` | 可选，本地私有信源，不入库，加载时与上者合并 |
+| `config/domains/<id>/domain.yaml` | 领域包：分类、关键词、实体/动作词、提示词语气 |
+| `config/domains/<id>/sources.yaml` | 信源、代理、单源上限、关键词过滤 |
+| `config/domains/<id>/sources.local.yaml` | 可选，本地私有信源，不入库，加载时与上者合并 |
 | `config/weights.yaml` | 打分权重、热度动量、成熟窗口、推送节奏 |
 | `config/models.yaml` | 模型名、单价、每日预算 |
 | `.env` | 凭据与运行期覆盖（代理、Webhook） |
 
 代理默认留空（直连），需要时用 `AI_RADAR_PROXY` 覆盖，不把个人网络配置写进仓库。
+
+数据默认落 `data/domains/ai/`（库与 outbox）；用 `--domain <id>` 或 `AI_RADAR_DOMAIN` 切换领域，各领域数据、信源、提示词互不干扰。
 
 ## 架构
 

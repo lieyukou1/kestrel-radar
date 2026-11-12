@@ -48,7 +48,7 @@ deep read to questions to comparison.**
 | First-party | OpenAI, DeepMind, Google AI, MSR, BAIR, NVIDIA, Apple ML, HF blogs | avoids second-hand paraphrase; own-product announcements are exempt from the promo filter |
 | Chinese | QbitAI, InfoQ, GeekPark, Leiphone, Juejin, kexue.fm | keyword filter and age window |
 | Overseas | The Decoder, TechCrunch AI | event-first ranking needs independent sources for coverage |
-| Private | `config/sources.local.yaml` | personal WeChat feeds, never committed |
+| Private | `config/domains/<id>/sources.local.yaml` | personal WeChat feeds, never committed |
 
 Each source has its own cursor and failure domain; raw payloads are stored for replay.
 
@@ -148,7 +148,7 @@ collection breadth.
 |---|---|---|
 | Feishu | `serve --channel feishu` | interactive cards, button callbacks, natural-language commands |
 | Webhook | `serve --channel webhook` | one-way; `generic / slack / discord / dingtalk / feishu` payloads |
-| Local files | `serve --channel fake` | writes `data/outbox/*.md`, no credentials needed |
+| Local files | `serve --channel fake` | writes `data/domains/<id>/outbox/*.md`, no credentials needed |
 
 The scheduler, deep-read worker and vector backfill are channel-agnostic. Adding a channel means
 implementing one `Notifier`.
@@ -202,14 +202,18 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 
 | File | Purpose |
 |---|---|
-| `config/sources.yaml` | sources, proxy, per-source limits, keyword filters |
-| `config/sources.local.yaml` | optional private sources, gitignored, merged at load time |
+| `config/domains/<id>/domain.yaml` | domain pack: taxonomy, keywords, entity/action vocab, prompt tone |
+| `config/domains/<id>/sources.yaml` | sources, proxy, per-source limits, keyword filters |
+| `config/domains/<id>/sources.local.yaml` | optional private sources, gitignored, merged at load time |
 | `config/weights.yaml` | scoring weights, momentum, maturity windows, cadence |
 | `config/models.yaml` | model names, pricing, daily budget |
 | `.env` | credentials and runtime overrides (proxy, webhook) |
 
 The proxy is empty by default; set `AI_RADAR_PROXY` when needed, so personal network settings
 never enter the repo.
+
+Data lives under `data/domains/ai/` (database and outbox). Switch domains with `--domain <id>`
+or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain.
 
 ## Architecture
 
