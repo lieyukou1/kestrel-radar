@@ -48,7 +48,7 @@ function Layout() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 sm:px-4 sm:py-3">
           <Link to="/" className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-[0_0_12px_2px_rgba(34,211,238,0.7)]" />
             <span className="text-sm font-semibold tracking-wide text-slate-100">
@@ -84,16 +84,19 @@ function Layout() {
               {list.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
+                  {item.last_digest
+                    ? ` · ${item.last_digest.date}`
+                    : " · 暂无日报"}
                 </option>
               ))}
             </select>
           </label>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
         <Outlet context={{ domain, domains: list } satisfies AppContext} />
       </main>
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-slate-600">
+      <footer className="mx-auto max-w-6xl px-3 pb-6 text-xs text-slate-600 sm:px-4 sm:pb-8">
         本地服务 · 数据不出本机
       </footer>
     </div>

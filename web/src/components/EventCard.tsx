@@ -32,7 +32,7 @@ export function EventCard({
     >
       <button
         type="button"
-        className="flex w-full items-start gap-3 p-4 text-left"
+        className="flex w-full items-start gap-3 p-3 text-left sm:p-4"
         onClick={onToggle}
         aria-expanded={expanded}
       >

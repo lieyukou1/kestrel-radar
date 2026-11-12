@@ -81,5 +81,11 @@ describe("DigestPage", () => {
     expect(await screen.findByText("测试事件")).toBeInTheDocument();
     expect(screen.getByText("主线：主线事件")).toBeInTheDocument();
     expect(screen.getByText("文章标题")).toBeInTheDocument();
+
+    const exportLink = screen.getByRole("link", { name: "导出 MD" });
+    expect(exportLink).toHaveAttribute(
+      "href",
+      "/api/v1/export/digest/2026-11-12?domain=ai&format=markdown&kind=daily",
+    );
   });
 });

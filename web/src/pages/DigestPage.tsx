@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useAppContext } from "../App";
-import { api, type ArticleAction } from "../api/client";
+import { api, exportDigestUrl, type ArticleAction } from "../api/client";
 import { ArticleDrawer } from "../components/ArticleDrawer";
 import { EventCard } from "../components/EventCard";
 import { Badge, Empty, ErrorBox, Loading, buttonClass } from "../components/ui";
@@ -80,7 +80,7 @@ export function DigestPage() {
             aria-label="选择日期"
             value={active}
             onChange={(event) => setDate(event.target.value)}
-            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500"
+            className="max-w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500"
           >
             {options.length === 0 ? <option value="">暂无记录</option> : null}
             {options.map((item) => (
@@ -97,6 +97,15 @@ export function DigestPage() {
           >
             {detail.isFetching ? "刷新中…" : "刷新"}
           </button>
+          {active ? (
+            <a
+              className={buttonClass}
+              href={exportDigestUrl(domain, active, "markdown", kind)}
+              download
+            >
+              导出 MD
+            </a>
+          ) : null}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,9 @@ def test_healthz_and_domains(client) -> None:
     response = client.get("/api/v1/domains")
     assert response.status_code == 200
     assert {item["id"] for item in response.json()} == {"ai", "finance"}
+    # 还没建库的领域也要能列出来，只是标记为无数据。
+    assert all(item["db_exists"] is False for item in response.json())
+    assert all(item["last_digest"] is None for item in response.json())
 
     finance = client.get("/api/v1/domains/finance")
     assert finance.status_code == 200
@@ -99,6 +103,17 @@ def test_healthz_and_domains(client) -> None:
         "official_finance",
     }
     assert client.get("/api/v1/domains/nope").status_code == 404
+
+
+def test_domain_reports_latest_digest(client, root: Path) -> None:
+    _seed(root)
+    payload = client.get("/api/v1/domains/ai").json()
+    assert payload["db_exists"] is True
+    assert payload["last_digest"] == {
+        "date": "2026-11-12",
+        "kind": "daily",
+        "status": "sent",
+    }
 
 
 def test_digest_list_and_detail(client, root: Path) -> None:
@@ -118,6 +133,44 @@ def test_digest_list_and_detail(client, root: Path) -> None:
     assert payload["events"][0]["items"][0]["saved"] is False
 
     assert client.get("/api/v1/digests/2026-11-11").status_code == 404
+
+
+def test_export_digest_markdown_and_json(client, root: Path) -> None:
+    seed = _seed(root)
+
+    response = client.get("/api/v1/export/digest/2026-11-12?kind=daily")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in response.headers["content-disposition"]
+    assert "# Kestrel Radar · 2026-11-12" in response.text
+    assert "## 1. 测试主线" in response.text
+    assert "NVIDIA 发布新芯片" in response.text
+    assert "为什么值得关注：因为" in response.text
+
+    as_json = client.get("/api/v1/export/digest/2026-11-12?format=json")
+    assert as_json.status_code == 200
+    assert as_json.json()["events"][0]["id"] == seed["topic_id"]
+
+    assert client.get("/api/v1/export/digest/2026-11-11").status_code == 404
+    assert client.get("/api/v1/export/digest/2026-11-12?format=pdf").status_code == 422
+
+
+def test_export_backup_is_readable_sqlite(client, root: Path) -> None:
+    _seed(root)
+
+    response = client.get("/api/v1/export/backup")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert "attachment" in response.headers["content-disposition"]
+
+    copy = root / "backup.db"
+    copy.write_bytes(response.content)
+    conn = sqlite3.connect(copy)
+    try:
+        row = conn.execute("SELECT title FROM documents").fetchone()
+    finally:
+        conn.close()
+    assert row[0] == "NVIDIA 发布新芯片"
 
 
 def test_events_endpoints(client, root: Path) -> None:

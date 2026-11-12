@@ -38,6 +38,8 @@ const domainInfo: DomainSummary = {
   ],
   weights: {},
   db: "data/domains/ai/ai_radar.db",
+  db_exists: true,
+  last_digest: { date: "2026-11-12", kind: "daily", status: "sent" },
 };
 
 describe("SettingsPage", () => {
@@ -62,5 +64,20 @@ describe("SettingsPage", () => {
       }),
     );
     expect(await screen.findByText(/已保存/)).toBeInTheDocument();
+  });
+
+  it("links to the domain backup and shows the latest digest", async () => {
+    vi.mocked(api.settings).mockResolvedValue(settings);
+    vi.mocked(api.domain).mockResolvedValue(domainInfo);
+
+    renderPage(<SettingsPage />);
+
+    const backup = await screen.findByRole("link", {
+      name: "下载数据库备份",
+    });
+    expect(backup).toHaveAttribute("href", "/api/v1/export/backup?domain=ai");
+    expect(
+      await screen.findByText(/最近日报：2026-11-12/),
+    ).toBeInTheDocument();
   });
 });

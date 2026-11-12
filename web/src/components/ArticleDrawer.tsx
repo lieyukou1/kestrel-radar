@@ -93,7 +93,7 @@ export function ArticleDrawer({
         className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
         onClick={onClose}
       />
-      <aside className="radar-scroll relative h-full w-full max-w-2xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-5 shadow-2xl">
+      <aside className="radar-scroll relative h-full w-full max-w-2xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl sm:p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <span className="text-xs text-slate-500">文章详情 #{documentId}</span>
           <button type="button" className={buttonClass} onClick={onClose}>

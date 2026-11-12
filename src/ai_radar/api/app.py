@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import PROJECT_ROOT
-from .routes import articles, assistant, digests, domains, jobs, query
+from .routes import articles, assistant, digests, domains, export, jobs, query
 
 # 开发期前端（Vite）与 API 不同端口；生产期同源托管，不受这里影响。
 CORS_ORIGINS = [
@@ -40,7 +40,7 @@ def create_app(root: Path | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for module in (domains, digests, articles, query, assistant, jobs):
+    for module in (domains, digests, articles, query, assistant, jobs, export):
         app.include_router(module.router, prefix="/api/v1")
 
     @app.get("/api/v1/healthz", tags=["health"])

@@ -40,6 +40,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+export function exportDigestUrl(
+  domain: string,
+  date: string,
+  format: "markdown" | "json" = "markdown",
+  kind?: string,
+): string {
+  return `${BASE}/export/digest/${date}${queryString({ domain, format, kind })}`;
+}
+
+export function backupUrl(domain: string): string {
+  return `${BASE}/export/backup${queryString({ domain })}`;
+}
+
 export type ArticleAction =
   | "read"
   | "save"

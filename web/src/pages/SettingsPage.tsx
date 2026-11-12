@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useAppContext } from "../App";
-import { api } from "../api/client";
+import { api, backupUrl } from "../api/client";
 import {
   Badge,
   Empty,
   ErrorBox,
   Loading,
   Panel,
+  buttonClass,
   primaryButtonClass,
 } from "../components/ui";
 
@@ -129,6 +130,37 @@ export function SettingsPage() {
         {(domainInfo.data?.sources ?? []).length === 0 ? (
           <Empty>这个领域没有配置信源。</Empty>
         ) : null}
+      </Panel>
+
+      <Panel
+        title="数据备份"
+        extra={
+          <span className="text-[11px] text-slate-500">
+            {domainInfo.data?.db ?? ""}
+          </span>
+        }
+      >
+        <p className="text-xs leading-5 text-slate-500">
+          导出当前领域的完整 SQLite 数据库（含 WAL 中已提交的数据），可直接用于迁移或离线分析。
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <a
+            className={buttonClass}
+            href={backupUrl(domain)}
+            download
+            aria-disabled={domainInfo.data?.db_exists === false}
+          >
+            下载数据库备份
+          </a>
+          {domainInfo.data?.last_digest ? (
+            <span className="text-[11px] text-slate-500">
+              最近日报：{domainInfo.data.last_digest.date} ·{" "}
+              {domainInfo.data.last_digest.kind} · {domainInfo.data.last_digest.status}
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-500">这个领域还没有日报。</span>
+          )}
+        </div>
       </Panel>
 
       <Panel title="当前偏好权重">

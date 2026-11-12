@@ -11,6 +11,12 @@ export type DomainSource = {
   enabled: boolean;
 };
 
+export type DomainDigestRef = {
+  date: string;
+  kind: string;
+  status: string;
+};
+
 export type DomainSummary = {
   id: string;
   name: string;
@@ -19,6 +25,8 @@ export type DomainSummary = {
   sources: DomainSource[];
   weights: Record<string, unknown>;
   db: string;
+  db_exists: boolean;
+  last_digest: DomainDigestRef | null;
 };
 
 export type DigestSummary = {

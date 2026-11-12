@@ -59,22 +59,20 @@ def list_digests(
     return [digest_dict(row) for row in ctx.conn.execute(sql, params).fetchall()]
 
 
-@router.get("/digests/{date}")
-def get_digest(
-    date: str,
-    ctx: Ctx,
-    kind: str | None = None,
-) -> dict:
-    row = repo.get_digest(ctx.conn, date, kind)
+def load_digest(
+    conn: sqlite3.Connection, date: str, kind: str | None = None
+) -> dict | None:
+    """日报的完整展示结构；网页详情与导出共用同一份取材逻辑。"""
+    row = repo.get_digest(conn, date, kind)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"没有 {date} 的日报")
+        return None
 
     digest_id = int(row["id"])
-    events = [_event(ctx.conn, digest_id, topic) for topic in _topics(ctx.conn, digest_id)]
+    events = [_event(conn, digest_id, topic) for topic in _topics(conn, digest_id)]
     # 周报的论文/仓库分组不属于事件，单独返回，网页端按 section 渲染。
     briefs = [
         {**document_dict(item), "section": item["section"], "reason": item["reason"]}
-        for item in ctx.conn.execute(
+        for item in conn.execute(
             """
             SELECT di.section, di.reason, d.*
             FROM digest_items di
@@ -87,6 +85,18 @@ def get_digest(
         ).fetchall()
     ]
     return {"digest": digest_dict(row), "events": events, "briefs": briefs}
+
+
+@router.get("/digests/{date}")
+def get_digest(
+    date: str,
+    ctx: Ctx,
+    kind: str | None = None,
+) -> dict:
+    payload = load_digest(ctx.conn, date, kind)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"没有 {date} 的日报")
+    return payload
 
 
 @router.get("/events")

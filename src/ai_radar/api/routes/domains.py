@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
 from ...config import ConfigError, load_config
 from ...domain.profile import DomainError, load_profile
+from ...store.db import connect
 from ..serialize import profile_dict
 
 router = APIRouter(tags=["domains"])
@@ -18,6 +20,30 @@ def _domain_ids(root: Path) -> list[str]:
     return sorted(
         path.name for path in base.iterdir() if (path / "domain.yaml").exists()
     )
+
+
+def _last_digest(db_path: Path) -> dict | None:
+    """最近一期日报，供网页端在领域下拉里显示「有没有数据、新不新」。"""
+    if not db_path.exists():
+        return None
+    try:
+        conn = connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT digest_date, kind, status FROM digests"
+                " ORDER BY digest_date DESC, id DESC LIMIT 1"
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return None
+    if row is None:
+        return None
+    return {
+        "date": row["digest_date"],
+        "kind": row["kind"],
+        "status": row["status"],
+    }
 
 
 def _domain_entry(root: Path, domain_id: str) -> dict:
@@ -46,6 +72,9 @@ def _domain_entry(root: Path, domain_id: str) -> dict:
         entry["sources"] = []
         entry["weights"] = {}
     entry["db"] = f"data/domains/{profile.id}/ai_radar.db"
+    db_path = root / "data" / "domains" / profile.id / "ai_radar.db"
+    entry["db_exists"] = db_path.exists()
+    entry["last_digest"] = _last_digest(db_path)
     return entry
 
 
