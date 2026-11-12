@@ -235,8 +235,12 @@ python -m ai_radar api --port 8765
 # open http://127.0.0.1:8765/
 ```
 
-Six pages: digest (events → articles), archive, library, ask, status, settings; switch domains
-in the top-right corner. During development use `npm run dev` (port 5173, `/api` proxied to 8765).
+Six main pages: digest (events → articles), archive, library, ask, status, settings. Article
+details open as a standalone page at `/articles/{id}`, with document metadata, sources and
+appearances in the sidebar; switch domains in the top-right corner. Deep reading runs as a
+background job: the article page shows queue status and refreshes the knowledge card
+automatically when it completes. During development use `npm run dev` (port 5173, `/api`
+proxied to 8765).
 
 Feishu now sends a single notice by default; the link comes from `AI_RADAR_WEB_URL`
 (default `http://127.0.0.1:8765`). Use `serve --channel feishu` for the legacy full cards.
@@ -255,9 +259,12 @@ Every endpoint accepts `?domain=ai|finance`.
 | Archive/search | `GET /api/v1/archive`, `GET /api/v1/search` |
 | QA/settings | `POST /api/v1/qa`, `GET/PUT /api/v1/settings` |
 | Jobs | `GET /api/v1/jobs`, `POST /api/v1/jobs/collect`, `POST /api/v1/jobs/digest`, `GET /api/v1/status` |
+| Export/backup | `GET /api/v1/export/digest/{date}?format=markdown\|json`, `GET /api/v1/export/backup` |
 
-Digest jobs triggered from the web default to `channel=fake` and `preview=true`, so they only
-write to the outbox and never push to Feishu by accident.
+The digest page can export the current issue as Markdown, and the settings page can download a
+full SQLite backup of the current domain; the domain dropdown shows each domain's latest digest
+date. Digest jobs triggered from the web default to `channel=fake` and `preview=true`, so they
+only write to the outbox and never push to Feishu by accident.
 
 ## Architecture
 
