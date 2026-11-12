@@ -87,7 +87,7 @@ function KbCard({ card }: { card: SummaryPayload }) {
       ) : null}
 
       {hasMethodOrEvidence ? (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="space-y-5">
           <KbBlock label="核心方法" value={card.method} />
           {evidenceItems.length > 1 ? (
             <section>
