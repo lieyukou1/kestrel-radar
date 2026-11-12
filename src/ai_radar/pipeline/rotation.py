@@ -197,7 +197,9 @@ def rotation_state(
     max_adjust = float(cfg.get("max_adjust", 0.2))
 
     paused = paused_dimensions(conn)
-    active = [tag for tag in TAGS if tag not in paused]
+    profile = getattr(config, "domain", None) if config is not None else None
+    dimensions = profile.tags if profile is not None else list(TAGS)
+    active = [tag for tag in dimensions if tag not in paused]
 
     item_counts = _item_counts(conn, item_window)
     theme_counts = _theme_counts(conn, theme_window)
@@ -220,7 +222,7 @@ def rotation_state(
         recorded_pushes=recorded,
         required_pushes=learning_days,
     )
-    for tag in TAGS:
+    for tag in dimensions:
         stat = DimensionStat(
             tag=tag,
             exposure=int(exposure.get(tag, 0)),
@@ -276,7 +278,7 @@ def format_rotation(state: RotationState) -> str:
             f"维度轮转（只记录，已 {state.recorded_pushes}/{state.required_pushes} 次日报）"
         )
     lines = [header]
-    for tag in TAGS:
+    for tag in state.stats:
         stat = state.stats.get(tag)
         if stat is None:
             continue

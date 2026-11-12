@@ -60,8 +60,10 @@ def parse_intent(
     if len(message) < 2:
         return None
 
-    llm = DeepSeekLLM(config.llm)
-    system = INTENT_SYSTEM.format(dimensions="、".join(TAGS))
+    llm = DeepSeekLLM(config.llm, profile=getattr(config, "domain", None))
+    profile = getattr(config, "domain", None)
+    dimensions = profile.tags if profile is not None else list(TAGS)
+    system = INTENT_SYSTEM.format(dimensions="、".join(dimensions))
     try:
         reply, _ = llm.chat(
             conn,
@@ -74,10 +76,11 @@ def parse_intent(
         data = parse_json_object(reply)
     except Exception:
         return None
-    return _normalize(data)
+    return _normalize(data, dimensions)
 
 
-def _normalize(data: dict) -> dict | None:
+def _normalize(data: dict, dimensions: list[str] | tuple[str, ...] | None = None) -> dict | None:
+    dimensions = dimensions or TAGS
     kind = str(data.get("intent") or "none")
     if kind not in {
         "library",
@@ -94,7 +97,7 @@ def _normalize(data: dict) -> dict | None:
     if kind == "library":
         filters: dict[str, str] = {}
         dimension = data.get("dimension")
-        if dimension in TAGS:
+        if dimension in dimensions:
             filters["dimension"] = dimension
         if data.get("kind") in KINDS:
             filters["kind"] = str(data["kind"])
@@ -133,7 +136,7 @@ def _normalize(data: dict) -> dict | None:
             if str(word).strip()
         ][:4]
         dimension = data.get("dimension")
-        if dimension not in TAGS:
+        if dimension not in dimensions:
             dimension = None
         if not keywords and not dimension:
             return None

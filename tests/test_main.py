@@ -271,7 +271,7 @@ def test_test_push_with_fake_channel(root: Path, capsys) -> None:
     assert main(["--root", str(root), "test-push", "--channel", "fake"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["channel"] == "fake"
-    assert list((root / "data" / "outbox").glob("*.md"))
+    assert list((root / "data" / "domains" / "ai" / "outbox").glob("*.md"))
 
 
 def test_feishu_commands_require_credentials(root: Path) -> None:

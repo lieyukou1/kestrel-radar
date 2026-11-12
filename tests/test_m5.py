@@ -287,7 +287,7 @@ def test_selected_items_are_retagged_by_llm(tmp_path: Path, monkeypatch) -> None
     )
 
     class FakeDeepSeek:
-        def __init__(self, config) -> None:
+        def __init__(self, config, **kwargs) -> None:
             pass
 
         def summarize(self, conn, document):
@@ -328,7 +328,7 @@ def test_retag_failure_keeps_original_dimension(tmp_path: Path, monkeypatch) -> 
     )
 
     class FakeDeepSeek:
-        def __init__(self, config) -> None:
+        def __init__(self, config, **kwargs) -> None:
             pass
 
         def summarize(self, conn, document):
@@ -1053,7 +1053,7 @@ def test_echo_switches_to_another_strong_theme(tmp_path: Path, monkeypatch) -> N
     add_document(conn, title="QWEN 新版实测", tag="1 模型与架构", status="observing", kind="paper", days_ago=5)
 
     class FakeDeepSeek:
-        def __init__(self, config) -> None:
+        def __init__(self, config, **kwargs) -> None:
             pass
 
         def label_theme(self, conn, titles, history=""):
@@ -1114,7 +1114,7 @@ def test_update_keeps_the_theme_and_stores_event_date(tmp_path: Path, monkeypatc
     add_document(conn, title="JEV 1.14 实测报告", tag="1 模型与架构", status="observing", kind="paper", days_ago=2)
 
     class FakeDeepSeek:
-        def __init__(self, config) -> None:
+        def __init__(self, config, **kwargs) -> None:
             pass
 
         def label_theme(self, conn, titles, history=""):
@@ -1291,7 +1291,7 @@ def test_digest_summarize_receives_prefetched_body(tmp_path: Path, monkeypatch) 
             seen.append(str(document["abstract"]))
             return {"problem": "p", "method": "m", "conclusions": [], "why": "w"}
 
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: FakeLLM())
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: FakeLLM())
     config = SimpleNamespace(
         llm=SimpleNamespace(),
         network=SimpleNamespace(proxy=None, mode="overseas-only"),
@@ -1375,7 +1375,7 @@ def test_screen_drops_promotional_before_composition(tmp_path: Path, monkeypatch
             retag: {"dimension": "2 训练与对齐", "keep": True, "reason": ""},
         }
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1449,7 +1449,7 @@ def test_screen_keeps_official_release_but_drops_official_off_topic(
             kept: {"dimension": "1 模型与架构", "keep": True, "reason": ""},
         }
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1485,7 +1485,7 @@ def test_screen_failure_keeps_all_candidates(tmp_path: Path, monkeypatch) -> Non
             kind="blog",
         )
     llm = ScreenLLM({}, error=LLMError("模型挂了"))
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1518,7 +1518,7 @@ def test_screen_ignored_when_drop_ratio_is_too_high(tmp_path: Path, monkeypatch)
             second: {"dimension": "1 模型与架构", "keep": False, "reason": "off_topic"},
         }
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1545,7 +1545,7 @@ def test_screen_disabled_skips_model(tmp_path: Path, monkeypatch) -> None:
     llm = ScreenLLM(
         {document_id: {"dimension": "1 模型与架构", "keep": False, "reason": "promotional"}}
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1627,7 +1627,7 @@ def test_digest_uses_segmented_events_for_theme_and_progress(
             "蚂蚁": {"label": "蚂蚁灵波开源触觉模型"},
         }
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn,
@@ -1695,7 +1695,7 @@ def test_digest_marks_a_continuing_event_with_day_and_new_count(
         conn, topic_id=previous_id, document_id=int(first_doc), angle="blog", rank=1
     )
     llm = SegmentLLM({"千问": {"label": "千问办公 2.0 发布", "when": "2026-11-10"}})
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"
@@ -1760,7 +1760,7 @@ def test_digest_skips_a_continuation_without_new_items(
             "蚂蚁": {"label": "蚂蚁灵波开源触觉模型"},
         }
     )
-    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg: llm)
+    monkeypatch.setattr(digest_mod, "DeepSeekLLM", lambda cfg, **kw: llm)
 
     result = build_digest(
         conn, config, notifier=FakeNotifier(config.outbox_dir), digest_date="2026-10-21"

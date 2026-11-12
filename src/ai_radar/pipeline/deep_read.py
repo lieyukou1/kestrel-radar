@@ -14,8 +14,8 @@ from ..adapters.url_safety import is_public_http_url
 from ..config import AppConfig
 from ..llm.client import DeepSeekLLM, LLMError, LLMJSONError, parse_json_object
 from ..llm.prompts import (
-    COMMUNITY_SYSTEM,
-    DEEP_READ_SYSTEM,
+    community_system,
+    deep_read_system,
     render_chunk_prompt,
     render_community_prompt,
     render_reduce_prompt,
@@ -204,7 +204,7 @@ def _extract_chunk(
         llm,
         conn,
         stage="deep_read",
-        system=DEEP_READ_SYSTEM,
+        system=deep_read_system(getattr(llm, "profile", None)),
         user=user,
         max_tokens=2000,
         document_id=int(document["id"]),
@@ -227,7 +227,7 @@ def _reduce(
         llm,
         conn,
         stage="deep_read",
-        system=DEEP_READ_SYSTEM,
+        system=deep_read_system(getattr(llm, "profile", None)),
         user=user,
         max_tokens=8000,
         document_id=int(document["id"]),
@@ -251,7 +251,7 @@ def _community_card(
         llm,
         conn,
         stage="deep_read",
-        system=COMMUNITY_SYSTEM,
+        system=community_system(getattr(llm, "profile", None)),
         user=user,
         max_tokens=1200,
         document_id=int(document["id"]),
@@ -273,7 +273,7 @@ def deep_read_document(
 ) -> DeepReadResult:
     if config.llm is None:
         raise LLMError("DEEPSEEK_API_KEY 未配置，无法精读")
-    llm = llm or DeepSeekLLM(config.llm)
+    llm = llm or DeepSeekLLM(config.llm, profile=getattr(config, "domain", None))
 
     proxy = config.network.proxy if config.network.mode == "overseas-only" else None
     source_format = "html"

@@ -1011,7 +1011,11 @@ def build_digest(
     cadence = weights.get("cadence") or {}
     scored = collect_candidates(conn, config, now=now)
     candidate_count = len(scored)
-    llm = DeepSeekLLM(config.llm) if config.llm else None
+    llm = (
+        DeepSeekLLM(config.llm, profile=getattr(config, "domain", None))
+        if config.llm
+        else None
+    )
     # 推送前先过闸门：企业软文与 AI 无关内容在编排前剔掉，空出的席位自动补位。
     scored, screened_dimensions, screen_stats = _screen_candidates(
         llm, conn, scored, config

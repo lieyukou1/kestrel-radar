@@ -9,20 +9,21 @@ from typing import Any
 import httpx
 
 from ..config import LLMConfig
+from ..domain.profile import DomainProfile
 from ..store import repo
 from ..util import utcnow
 from .prompts import (
-    DIMENSIONS,
-    SCREEN_SYSTEM,
     SCREEN_TEMPLATE,
-    SEGMENT_SYSTEM,
     SEGMENT_TEMPLATE,
-    SUMMARY_SYSTEM,
     SUMMARY_TEMPLATE,
-    TAG_SYSTEM,
     TAG_TEMPLATE,
-    THEME_SYSTEM,
     THEME_TEMPLATE,
+    dimensions_of,
+    screen_system,
+    segment_system,
+    summary_system,
+    tag_system,
+    theme_system,
 )
 
 MAX_CONTENT_CHARS = 6000
@@ -92,12 +93,14 @@ def _clean_flag(value: Any) -> bool | None:
     return None
 
 
-def _clean_dimension(value: Any) -> str:
-    """只接受八个分类的完整名称或数字前缀；其余一律丢弃，宁可不改也别写脏数据。"""
+def _clean_dimension(value: Any, dimensions: tuple[str, ...] = ()) -> str:
+    """只接受领域分类的完整名称或数字前缀；其余一律丢弃，宁可不改也别写脏数据。"""
     text = str(value or "").strip()
-    if text in DIMENSIONS:
+    if not dimensions:
+        dimensions = dimensions_of()
+    if text in dimensions:
         return text
-    for dimension in DIMENSIONS:
+    for dimension in dimensions:
         if text == dimension.split()[0]:
             return dimension
     return ""
@@ -134,9 +137,17 @@ def estimate_cost(
 
 
 class DeepSeekLLM:
-    def __init__(self, config: LLMConfig, *, timeout: float = 120.0) -> None:
+    def __init__(
+        self,
+        config: LLMConfig,
+        *,
+        timeout: float = 120.0,
+        profile: DomainProfile | None = None,
+    ) -> None:
         self.config = config
         self.timeout = timeout
+        # 领域语气与分类体系：不传则用仓库自带的 AI 包
+        self.profile = profile
 
     def _check_budget(self, conn: sqlite3.Connection) -> None:
         day = utcnow().date().isoformat()
@@ -252,7 +263,7 @@ class DeepSeekLLM:
         text, _ = self.chat(
             conn,
             stage="theme",
-            system=THEME_SYSTEM,
+            system=theme_system(self.profile),
             user=user,
             # 思考模型会先花掉一批 token 再输出，400 在长标题下会被截成空内容。
             max_tokens=800,
@@ -294,7 +305,7 @@ class DeepSeekLLM:
         text, _ = self.chat(
             conn,
             stage="tag",
-            system=TAG_SYSTEM,
+            system=tag_system(self.profile),
             user=TAG_TEMPLATE.format(payload=payload),
             # 思考模型先消耗推理 token，额度给小了会返回空内容。
             max_tokens=1200,
@@ -314,7 +325,9 @@ class DeepSeekLLM:
                 document_id = int(item.get("id"))
             except (TypeError, ValueError):
                 continue
-            dimension = _clean_dimension(item.get("dimension"))
+            dimension = _clean_dimension(
+                item.get("dimension"), dimensions_of(self.profile)
+            )
             if dimension:
                 result[document_id] = dimension
         return result
@@ -345,7 +358,7 @@ class DeepSeekLLM:
         text, _ = self.chat(
             conn,
             stage="tag",
-            system=SCREEN_SYSTEM,
+            system=screen_system(self.profile),
             user=SCREEN_TEMPLATE.format(payload=payload),
             # 每条一行 JSON，条数比分类多，额度跟着放大，否则会被截断。
             max_tokens=3000,
@@ -357,7 +370,7 @@ class DeepSeekLLM:
             retry_text, _ = self.chat(
                 conn,
                 stage="tag",
-                system=SCREEN_SYSTEM,
+                system=screen_system(self.profile),
                 user=SCREEN_TEMPLATE.format(payload=payload),
                 max_tokens=4000,
             )
@@ -377,7 +390,9 @@ class DeepSeekLLM:
             except (TypeError, ValueError):
                 continue
             result[document_id] = {
-                "dimension": _clean_dimension(item.get("dimension")),
+                "dimension": _clean_dimension(
+                    item.get("dimension"), dimensions_of(self.profile)
+                ),
                 "keep": _clean_keep(item.get("keep")),
                 "reason": _clean_screen_reason(item.get("reason")),
             }
@@ -397,7 +412,7 @@ class DeepSeekLLM:
         text, _ = self.chat(
             conn,
             stage="theme",
-            system=SEGMENT_SYSTEM,
+            system=segment_system(self.profile),
             user=SEGMENT_TEMPLATE.format(payload=payload),
             max_tokens=3000,
         )
@@ -407,7 +422,7 @@ class DeepSeekLLM:
             retry_text, _ = self.chat(
                 conn,
                 stage="theme",
-                system=SEGMENT_SYSTEM,
+                system=segment_system(self.profile),
                 user=SEGMENT_TEMPLATE.format(payload=payload),
                 max_tokens=4000,
             )
@@ -467,7 +482,7 @@ class DeepSeekLLM:
         text, _ = self.chat(
             conn,
             stage="summary",
-            system=SUMMARY_SYSTEM,
+            system=summary_system(self.profile),
             user=user,
             max_tokens=800,
             document_id=int(document["id"]),
@@ -479,7 +494,7 @@ class DeepSeekLLM:
             retry_text, _ = self.chat(
                 conn,
                 stage="summary",
-                system=SUMMARY_SYSTEM,
+                system=summary_system(self.profile),
                 user=user,
                 max_tokens=2400,
                 document_id=int(document["id"]),

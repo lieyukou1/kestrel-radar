@@ -27,10 +27,11 @@ class DomainError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Taxonomy:
-    """一个分类：展示名（也是入库的 tag 值）+ 关键词。"""
+    """一个分类：展示名（也是入库的 tag 值）+ 一句话说明 + 关键词。"""
 
     name: str
     keywords: tuple[str, ...]
+    description: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,8 @@ class DomainProfile:
     default_action: str = DEFAULT_ACTION
     # 与 config/weights.yaml 深合并，领域内的成熟窗口/节奏等可以单独覆盖
     weights_overrides: dict = field(default_factory=dict)
+    # 领域语气：persona / 软文口径 / 偏题口径，供提示词模板替换
+    prompts: dict = field(default_factory=dict)
 
     @property
     def tags(self) -> list[str]:
@@ -111,7 +114,8 @@ def _build_taxonomy(doc: dict, path: Path) -> tuple[Taxonomy, ...]:
             raise DomainError(f"{path}: 分类名重复：{name}")
         seen.add(name)
         keywords = _string_list(item.get("keywords"), f"taxonomy[{name}].keywords", path)
-        taxonomy.append(Taxonomy(name=name, keywords=keywords))
+        description = str(item.get("description") or "").strip()
+        taxonomy.append(Taxonomy(name=name, keywords=keywords, description=description))
     return tuple(taxonomy)
 
 
@@ -193,6 +197,9 @@ def load_profile(root: Path, domain_id: str = DEFAULT_DOMAIN) -> DomainProfile:
     overrides = doc.get("weights_overrides") or {}
     if not isinstance(overrides, dict):
         raise DomainError(f"{path}: weights_overrides 必须是对象")
+    prompts = doc.get("prompts") or {}
+    if not isinstance(prompts, dict):
+        raise DomainError(f"{path}: prompts 必须是对象")
     return DomainProfile(
         id=str(doc.get("id") or domain_id).strip(),
         name=str(doc.get("name") or domain_id).strip(),
@@ -202,6 +209,7 @@ def load_profile(root: Path, domain_id: str = DEFAULT_DOMAIN) -> DomainProfile:
         actions=_build_actions(doc, path),
         default_action=str(doc.get("default_action") or DEFAULT_ACTION).strip(),
         weights_overrides=dict(overrides),
+        prompts={str(key): str(value) for key, value in prompts.items()},
     )
 
 

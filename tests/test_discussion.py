@@ -226,7 +226,7 @@ def test_build_digest_persists_discussion_into_summary(tmp_path, monkeypatch) ->
         discussion, "collect_comments", lambda *a, **k: ["one", "two", "three"]
     )
     monkeypatch.setattr(
-        digest_mod, "DeepSeekLLM", lambda cfg: FakeLLM('{"points": ["社区观点一"]}')
+        digest_mod, "DeepSeekLLM", lambda cfg, **kw: FakeLLM('{"points": ["社区观点一"]}')
     )
 
     config = SimpleNamespace(

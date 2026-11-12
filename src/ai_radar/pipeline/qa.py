@@ -80,7 +80,7 @@ def _context(
 def _llm_or_raise(config: AppConfig) -> DeepSeekLLM:
     if config.llm is None:
         raise LLMError("LLM 未配置，无法生成回答")
-    return DeepSeekLLM(config.llm)
+    return DeepSeekLLM(config.llm, profile=getattr(config, "domain", None))
 
 
 def _terms(question: str, keywords: list[str] | None) -> list[str]:

@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from ..adapters.sources import hackernews, lobsters
 from ..llm.client import BudgetExceeded, LLMError, parse_json_object
-from ..llm.prompts import DISCUSSION_SYSTEM, DISCUSSION_TEMPLATE
+from ..llm.prompts import DISCUSSION_TEMPLATE, discussion_system
 from ..store import repo
 from ..util import iso, parse_iso, utcnow
 
@@ -57,7 +57,7 @@ def _summarize(llm, conn: sqlite3.Connection, document, comments: list[str]) -> 
     text, _usage = llm.chat(
         conn,
         stage="discussion",
-        system=DISCUSSION_SYSTEM,
+        system=discussion_system(getattr(llm, "profile", None)),
         user=user,
         max_tokens=500,
         document_id=int(document["id"]),

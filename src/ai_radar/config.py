@@ -208,8 +208,14 @@ def load_config(root: Path | None = None, *, domain: str | None = None) -> AppCo
     else:
         profile = load_profile(root, domain_id)
 
-    sources_path = root / "config" / "sources.yaml"
-    local_sources_path = root / "config" / "sources.local.yaml"
+    pack_dir = root / "config" / "domains" / domain_id
+    # 领域包自带的源文件优先；精简 root（只带三个 yaml）回退到根目录。
+    sources_path = pack_dir / "sources.yaml"
+    local_sources_path = pack_dir / "sources.local.yaml"
+    if not sources_path.exists():
+        sources_path = root / "config" / "sources.yaml"
+    if not local_sources_path.exists():
+        local_sources_path = root / "config" / "sources.local.yaml"
     weights_path = root / "config" / "weights.yaml"
     models_path = root / "config" / "models.yaml"
 
@@ -296,13 +302,14 @@ def load_config(root: Path | None = None, *, domain: str | None = None) -> AppCo
         else None
     )
 
+    data_dir = root / "data" / "domains" / domain_id
     return AppConfig(
         root=root,
         network=network,
         sources=sources,
         weights=weights,
-        db_path=root / "data" / "ai_radar.db",
-        outbox_dir=root / "data" / "outbox",
+        db_path=data_dir / "ai_radar.db",
+        outbox_dir=data_dir / "outbox",
         feishu=feishu,
         llm=llm,
         webhook=webhook,

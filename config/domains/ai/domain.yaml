@@ -6,6 +6,7 @@ name: AI 观察
 # 8 个主分类：顺序决定维度轮转与意图白名单的先后，不要随意调整。
 taxonomy:
   - name: 1 模型与架构
+    description: 新模型、网络结构、预训练范式
     keywords:
       - transformer
       - architecture
@@ -27,6 +28,7 @@ taxonomy:
       - 神经网络
       - 深度学习
   - name: 2 训练与对齐
+    description: 训练目标、训练数据与配方、微调、RLHF/对齐、合成数据
     keywords:
       - training
       - fine-tune
@@ -48,6 +50,7 @@ taxonomy:
       - 预训练
       - 合成数据
   - name: 3 推理与加速
+    description: 量化、蒸馏、KV cache、并行、编译、serving、单机性能优化
     keywords:
       - inference
       - quantization
@@ -71,6 +74,7 @@ taxonomy:
       - 算子
       - 提速
   - name: 4 Agent 与应用
+    description: Agent 框架、工具调用、多智能体、RAG、工作流等应用层工作
     keywords:
       - agent
       - tool use
@@ -90,6 +94,7 @@ taxonomy:
       - 编程助手
       - 插件
   - name: 5 多模态与生成
+    description: 视觉/语音/视频模型、扩散、生成范式本身
     keywords:
       - multimodal
       - vision
@@ -112,6 +117,7 @@ taxonomy:
       - 文生视频
       - 生成式
   - name: 6 系统与基础设施
+    description: 分布式、集群、存储、调度、硬件、跨机器工程
     keywords:
       - distributed
       - cluster
@@ -133,6 +139,7 @@ taxonomy:
       - 服务器
       - 数据中心
   - name: 7 理论与可解释性
+    description: 理论分析、缩放律、可解释性、涌现机理
     keywords:
       - theory
       - scaling law
@@ -150,6 +157,7 @@ taxonomy:
       - 涌现
       - 证明
   - name: 8 数据与评测
+    description: 数据集、基准（benchmark）、评估方法、eval harness
     keywords:
       - dataset
       - benchmark
@@ -422,6 +430,18 @@ actions:
     pattern: 发布|上线|推出|正式开放|开源|available|launch|release
     ignore_case: true
 default_action: other
+
+# 领域语气：替换提示词里的「你是 XXX」与筛选口径，其余 JSON 约束仍在代码里。
+prompts:
+  summary_persona: AI 领域的研究助理
+  discussion_persona: AI 领域的社区观察员
+  deep_read_persona: AI 领域的精读助手
+  editor_persona: AI 领域的技术编辑
+  community_persona: 技术编辑助手
+  off_topic: 与 AI / 大模型没有实质关系（例如量子硬件、芯片制造工艺、传统行业数字化）
+  promotional: 主体是在卖产品、服务或方案，或企业合作、签约、揭牌、落地仪式类通稿
+  official_examples: OpenAI、DeepMind、NVIDIA、Hugging Face
+  dimension_intro: 分类只有这八个，dimension 必须逐字使用：
 
 # 领域级权重覆盖：与 config/weights.yaml 深合并，留空表示沿用全局默认。
 weights_overrides: {}

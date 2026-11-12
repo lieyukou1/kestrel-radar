@@ -6,12 +6,14 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from .config import ConfigError, load_config
+from .domain.profile import DomainError
 from .jobs.collect import run_collect
 from .notify_factory import CHANNELS, build_notifier
 from .pipeline.digest import build_digest
 from .pipeline.interactions import format_favorites, format_status_table, handle_action
 from .store import repo
 from .store.db import connect, init_db
+from .store.migrate import migrate_legacy_layout
 
 
 def _version() -> str:
@@ -24,6 +26,11 @@ def _version() -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ai-radar", description="AI Radar")
     parser.add_argument("--root", type=Path, default=None, help="项目根目录（默认自动推断）")
+    parser.add_argument(
+        "--domain",
+        default=None,
+        help="领域包 id（默认 ai，也可用 AI_RADAR_DOMAIN 指定）",
+    )
     parser.add_argument(
         "--version", action="version", version=f"kestrel-radar {_version()}"
     )
@@ -104,10 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        config = load_config(args.root)
-    except ConfigError as exc:
+        config = load_config(args.root, domain=args.domain)
+    except (ConfigError, DomainError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2
+    # 旧版单库布局只搬一次；先 checkpoint 再移动，避免丢 WAL 里的事务。
+    migrate_legacy_layout(config.root, config.domain.id if config.domain else "ai")
 
     if args.command == "config-check":
         feed_count = sum(len(source.options.get("feeds") or []) for source in config.sources)
@@ -115,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "ok": True,
+                    "domain": config.domain.id if config.domain else "",
                     "sources": len(config.sources),
                     "feeds": feed_count,
                     "network_mode": config.network.mode,
