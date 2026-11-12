@@ -93,7 +93,13 @@ export const api = {
     action: ArticleAction,
     extra: { reason?: string; digest_date?: string } = {},
   ) =>
-    request<{ ok: boolean; action: string; saved: boolean; read: boolean }>(
+    request<{
+      ok: boolean;
+      action: string;
+      status: string;
+      saved: boolean;
+      read: boolean;
+    }>(
       `/articles/${id}/actions${queryString({ domain })}`,
       { method: "POST", body: JSON.stringify({ action, ...extra }) },
     ),

@@ -1,9 +1,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useAppContext } from "../App";
 import { api } from "../api/client";
-import { ArticleDrawer } from "../components/ArticleDrawer";
 import {
   Badge,
   Empty,
@@ -18,11 +18,11 @@ const PAGE_SIZE = 12;
 
 export function LibraryPage() {
   const { domain } = useAppContext();
+  const navigate = useNavigate();
   const [dimension, setDimension] = useState("");
   const [kind, setKind] = useState("");
   const [onlySaved, setOnlySaved] = useState(false);
   const [page, setPage] = useState(0);
-  const [drawer, setDrawer] = useState<number | null>(null);
 
   const kb = useQuery({
     queryKey: ["kb", domain, dimension, kind, onlySaved, page],
@@ -131,7 +131,7 @@ export function LibraryPage() {
             key={item.id}
             type="button"
             className="block w-full rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-left transition hover:border-cyan-500/40"
-            onClick={() => setDrawer(item.id)}
+            onClick={() => navigate(`/articles/${item.id}`)}
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-slate-100">{item.title}</span>
@@ -173,12 +173,6 @@ export function LibraryPage() {
           下一页
         </button>
       </div>
-
-      <ArticleDrawer
-        domain={domain}
-        documentId={drawer}
-        onClose={() => setDrawer(null)}
-      />
     </div>
   );
 }

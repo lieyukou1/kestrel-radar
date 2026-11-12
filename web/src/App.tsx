@@ -5,6 +5,7 @@ import { Link, NavLink, Outlet, Route, Routes, useOutletContext } from "react-ro
 import { api } from "./api/client";
 import type { DomainSummary } from "./api/types";
 import { ArchivePage } from "./pages/ArchivePage";
+import { ArticlePage } from "./pages/ArticlePage";
 import { AskPage } from "./pages/AskPage";
 import { DigestPage } from "./pages/DigestPage";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -120,6 +121,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<DigestPage />} />
+        <Route path="articles/:documentId" element={<ArticlePage />} />
         <Route path="archive" element={<ArchivePage />} />
         <Route path="library" element={<LibraryPage />} />
         <Route path="ask" element={<AskPage />} />

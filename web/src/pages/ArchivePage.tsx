@@ -1,9 +1,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useAppContext } from "../App";
 import { api } from "../api/client";
-import { ArticleDrawer } from "../components/ArticleDrawer";
 import { ArticleRow } from "../components/ArticleRow";
 import {
   Empty,
@@ -18,13 +18,13 @@ const PAGE_SIZE = 20;
 
 export function ArchivePage() {
   const { domain } = useAppContext();
+  const navigate = useNavigate();
   const [draft, setDraft] = useState("");
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [kind, setKind] = useState("");
   const [saved, setSaved] = useState(false);
   const [page, setPage] = useState(0);
-  const [drawer, setDrawer] = useState<number | null>(null);
 
   const domainInfo = useQuery({
     queryKey: ["domain", domain],
@@ -152,7 +152,12 @@ export function ArchivePage() {
 
       <div className="space-y-2">
         {(archive.data?.items ?? []).map((item) => (
-          <ArticleRow key={item.id} article={item} onOpen={setDrawer} showAbstract />
+          <ArticleRow
+            key={item.id}
+            article={item}
+            onOpen={(id) => navigate(`/articles/${id}`)}
+            showAbstract
+          />
         ))}
       </div>
 
@@ -178,12 +183,6 @@ export function ArchivePage() {
           下一页
         </button>
       </div>
-
-      <ArticleDrawer
-        domain={domain}
-        documentId={drawer}
-        onClose={() => setDrawer(null)}
-      />
     </div>
   );
 }

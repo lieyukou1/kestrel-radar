@@ -61,7 +61,10 @@ def create_app(root: Path | None = None) -> FastAPI:
             target = dist / full_path
             if full_path and target.is_file():
                 return FileResponse(target)
-            return FileResponse(dist / "index.html")
+            # index.html 必须每次回源：否则前端发版后浏览器会继续引用旧 assets。
+            return FileResponse(
+                dist / "index.html", headers={"Cache-Control": "no-cache"}
+            )
 
     return app
 

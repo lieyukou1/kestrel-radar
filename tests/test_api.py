@@ -329,6 +329,9 @@ def test_spa_fallback_when_dist_exists(tmp_path: Path) -> None:
     (dist / "index.html").write_text("<html>spa</html>", encoding="utf-8")
 
     with TestClient(create_app(tmp_path)) as spa_client:
-        assert spa_client.get("/archive").text == "<html>spa</html>"
+        response = spa_client.get("/archive")
+        assert response.text == "<html>spa</html>"
+        # 发版后 index.html 必须回源，避免浏览器继续加载旧 assets。
+        assert response.headers["cache-control"] == "no-cache"
         assert spa_client.get("/api/v1/healthz").json()["ok"] is True
         assert spa_client.get("/api/v1/nope").status_code == 404

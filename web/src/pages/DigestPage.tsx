@@ -1,19 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useAppContext } from "../App";
 import { api, exportDigestUrl, type ArticleAction } from "../api/client";
-import { ArticleDrawer } from "../components/ArticleDrawer";
 import { EventCard } from "../components/EventCard";
 import { Badge, Empty, ErrorBox, Loading, buttonClass } from "../components/ui";
 
 export function DigestPage() {
   const { domain } = useAppContext();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<"daily" | "weekly">("daily");
   const [date, setDate] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [drawer, setDrawer] = useState<number | null>(null);
 
   const digests = useQuery({
     queryKey: ["digests", domain],
@@ -145,7 +145,7 @@ export function DigestPage() {
             onToggle={() =>
               setExpanded((current) => (current === event.id ? null : event.id))
             }
-            onOpenArticle={setDrawer}
+            onOpenArticle={(id) => navigate(`/articles/${id}`)}
             onAction={(id, type) => action.mutate({ id, type })}
             busy={action.isPending}
           />
@@ -164,7 +164,7 @@ export function DigestPage() {
               key={`${item.section}-${item.id}`}
               type="button"
               className="block w-full rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-left hover:border-cyan-500/40"
-              onClick={() => setDrawer(item.id)}
+              onClick={() => navigate(`/articles/${item.id}`)}
             >
               <span className="text-sm text-slate-200">{item.title}</span>
               <span className="ml-2 text-[11px] text-slate-500">
@@ -174,12 +174,6 @@ export function DigestPage() {
           ))}
         </section>
       ) : null}
-
-      <ArticleDrawer
-        domain={domain}
-        documentId={drawer}
-        onClose={() => setDrawer(null)}
-      />
     </div>
   );
 }
