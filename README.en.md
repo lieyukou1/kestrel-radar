@@ -1,6 +1,7 @@
 # Kestrel Radar
 
 > **A radar that remembers what it already told you.**
+> Local-first, multi-domain news radar: fold reports into events, and remember what you were told.
 
 [中文](README.md) · [English](README.en.md)
 
@@ -9,55 +10,113 @@
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 [![local-first](https://img.shields.io/badge/local--first-SQLite-4B8BBE)](https://sqlite.org/)
 
-Kestrel Radar is a **local-first** AI intelligence system. It collects from arXiv, Hugging Face
-Daily Papers, Hacker News, GitHub, Lobsters, official blogs and Chinese / overseas tech media,
-then scores, folds reports of the same story into one event, de-duplicates and delivers a digest
-to Feishu (two-level interactive cards: events first, articles on tap) or any webhook.
+Kestrel Radar runs on your machine. It collects sources from a **domain pack**, de-duplicates at
+the title and entity level, scores items across five dimensions, folds reports of the same story
+into one **event**, and delivers through two exits:
 
-The difference is not collection — it is **memory**. The same story does not get pushed twice
-because it changed its title or arrived two days late. A topic that genuinely made progress
-does get pushed again.
+- **Web UI**: digest, events, article detail, knowledge base, Q&A, status, settings;
+- **Notifications**: by default Feishu receives one short message with a web link; full cards,
+  webhooks and local Markdown are still available.
+
+Two domain packs ship in the repo: `ai` (AI watch) and `finance` (financial markets). Collection,
+scoring, event grouping, echo detection and deep reading share one pipeline; switching domains
+only changes the config under `config/domains/<id>/`. Each domain has its own SQLite database, so
+data, sources and prompts never mix.
+
+The difference from most aggregators is not collection breadth — it is **memory**. The same event
+is not pushed twice because its title changed or it arrived two days late; a topic that genuinely
+made progress is recognised and pushed again.
 
 ---
 
+## Contents
+
+- [What it is now](#what-it-is-now)
+- [Why](#why)
+- [Core capabilities](#core-capabilities)
+- [Delivery channels](#delivery-channels)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [Web UI](#web-ui)
+- [Web API](#web-api)
+- [Architecture](#architecture)
+- [Key rules](#key-rules)
+- [Design trade-offs](#design-trade-offs)
+- [Known limits](#known-limits)
+- [Roadmap](#roadmap)
+- [Development](#development)
+- [Security](#security)
+- [License](#license)
+
+---
+
+## What it is now
+
+| Dimension | Current approach |
+|---|---|
+| Domains | Pluggable domain packs; `ai` / `finance` built in; switch with `--domain` or `AI_RADAR_DOMAIN` |
+| Data | One SQLite per domain: `data/domains/<id>/ai_radar.db` |
+| Main UI | React web app: digest, archive, library, ask, status, settings, plus a standalone article page |
+| Delivery | Feishu notice with a web link by default; full cards / webhook / local Markdown optional |
+| Automation | CLI keeps `collect` / `digest` / `serve` / `api`; cron or long-running service |
+| Export | Digest as Markdown / JSON; full database backup from the settings page |
+
 ## Why
 
-AI news does not lack aggregators. It lacks three things:
+Information does not lack aggregators. It lacks three things:
 
-1. **Memory.** A model release appears on arXiv, Hacker News, a newsletter and GitHub. Most
-   aggregators treat those as four separate stories and send you four messages; the next day
-   a reworded version appears and you get it again.
-2. **Time sense.** Publish time is not event time. A three-day-old story being re-reported
-   should not rank alongside today's breaking news.
-3. **Closure.** Read-and-forget means you cannot find it again. Favorites become a landfill,
-   not a knowledge base.
+1. **Memory.** One story appears in a wire service, a community post, a newsletter and an official
+   announcement. Most aggregators treat those as four stories and send you four messages; the next
+   day a reworded version arrives and you get it again.
+2. **Time sense.** Publish time is not event time. A three-day-old story being re-reported should
+   not rank alongside today's breaking news.
+3. **Closure.** Read-and-forget means you cannot find it again. Favorites become a landfill, not a
+   knowledge base.
 
-Kestrel Radar is built around those: **de-duplication at the entity level, ranking by how a
-story fermented rather than when it was posted, and a full path from push to collection to
-deep read to questions to comparison.**
+Kestrel Radar is built around those: **de-duplication at the entity level, ranking by how a story
+fermented rather than when it was posted, and a full path from delivery to collection to deep read
+to questions to comparison.**
 
-## What it does
+## Core capabilities
 
-### 1. Multi-source collection with per-source cursors
+### 1. Domain packs: one pipeline, many domains
 
-| Type | Sources | Notes |
-|---|---|---|
-| Papers | arXiv, Hugging Face Daily Papers | abstracts and authors preserved |
-| Community | Hacker News, Lobsters | points and comments as heat signals |
-| Code | GitHub Search | stars plus **growth across snapshots** |
-| First-party | OpenAI, DeepMind, Google AI, MSR, BAIR, NVIDIA, Apple ML, HF blogs | avoids second-hand paraphrase; own-product announcements are exempt from the promo filter |
-| Chinese | QbitAI, InfoQ, GeekPark, Leiphone, Juejin, kexue.fm | keyword filter and age window |
-| Overseas | The Decoder, TechCrunch AI | event-first ranking needs independent sources for coverage |
-| Private | `config/domains/<id>/sources.local.yaml` | personal WeChat feeds, never committed |
+Each domain is a pack under `config/domains/<id>/`:
+
+```
+config/domains/<id>/
+├── domain.yaml          # taxonomy, keywords, entity/action vocab, prompts, weight overrides
+├── sources.yaml         # sources, proxy, per-source limits, keyword filters
+└── sources.local.yaml   # optional private sources, gitignored, merged at load time
+```
+
+Two packs ship in the repo:
+
+| Pack | Taxonomy | Sources | Overrides |
+|---|---|---|---|
+| `ai` | 8 classes: models & architectures, training & alignment, inference & acceleration, agents & applications, multimodal & generation, systems & infrastructure, theory & interpretability, data & evaluation | arXiv, HF Daily, Hacker News, GitHub, Lobsters, 8 official blogs, 6 Chinese tech feeds, 2 overseas AI outlets | global weights, 96h event window |
+| `finance` | 8 classes: macro, monetary policy, markets, earnings & deals, regulation, fintech & crypto, banking & credit, global trade & geopolitics | Wallstreetcn, CNBC, MarketWatch, FT, Economist, BBC, Guardian, NYT, plus Fed / SEC / ECB | authority 0.35 + recency 0.25, heat 0.10; 2h maturity; 48h event window |
+
+Domains are fully isolated:
+
+```bash
+uv run ai-radar --domain finance collect
+uv run ai-radar --domain finance digest --channel fake --preview
+```
+
+Data lives under `data/domains/<id>/`; delete that directory and the domain is gone.
+
+### 2. Collection, maturity window and scoring
+
+Content is not pushed as soon as it is collected — it ferments first:
+
+- Default maturity: papers 48h, forums 24h, repos 24h, blogs 12h; the finance pack uses 2h for all.
+- Default weights: authority 0.30 / heat 0.30 / recency 0.15 / novelty 0.15 / preference 0.10.
+- Heat is **65% static signal + 35% snapshot momentum** — a repo growing 22% per day maxes it out.
+- GitHub gate: ≥200 stars, ≥3 observations, ≥1.5h span, ≥20 stars/day and ≥1% per day.
 
 Each source has its own cursor and failure domain; raw payloads are stored for replay.
-
-### 2. Maturity window, five-factor scoring, momentum
-
-- Maturity: papers 48h, forums 24h, repos 24h, blogs 12h.
-- Weights: authority 0.30 / heat 0.30 / recency 0.15 / novelty 0.15 / preference 0.10.
-- Heat = **65% static signal + 35% snapshot momentum** — a repo growing 22% per day maxes it out.
-- GitHub gate: ≥200 stars, ≥3 observations, ≥1.5h span, ≥20 stars/day and ≥1% per day.
 
 ### 3. Event first: events on level one, articles on level two
 
@@ -92,18 +151,23 @@ report date of the round is shown instead (otherwise cards would say "last year"
 that re-reported old news may open a new mainline, bounded by the 30-day document dedupe. The
 same event key within 7 days continues the thread and shows "day N / M new".
 
-### 5. Three levels of reading
+### 5. Web reading and deep reading
 
-- **L1 event list**: the first card holds 12 events (title · article count · source count · day
-  number · one-line takeaway · event date) with the mainline on top. Monday weekly is 3 papers +
-  2 repos, ranked by fermented heat.
-- **L2 event detail**: tapping "details" pulls every article of that event (max 6) with summary,
-  source link, save / dislike. Mainline summaries are generated before the push, so no waiting.
-- **L3 deep read**: background full-text fetch, structured extraction, knowledge-base entry, then
-  a "deep read finished" message with motivation, method, evidence, limitations, relations and
+- **L1 event list**: the digest holds 12 events (title · article count · day number · one-line
+  takeaway · event date) with the mainline on top. Monday weekly is 3 papers + 2 repos, ranked by
+  fermented heat.
+- **L2 article detail**: expand an event to see its articles; clicking a title opens a standalone
+  article page with body, summary, knowledge card, sources and appearances.
+- **L3 deep reading**: background full-text fetch, structured extraction, knowledge-base entry.
+  The article page shows queue status and refreshes the knowledge card automatically when done.
+  The card covers problem, method, evidence, conclusions, limitations, engineering notes and
   citation anchors.
 
-### 6. Knowledge base
+The digest page can export the current issue as Markdown (the API also supports JSON), and the
+settings page can download a full database backup. The domain dropdown shows each domain's latest
+digest date.
+
+### 6. Knowledge base and Q&A
 
 Only deep-read articles enter the KB. From there you can find related articles, compare two
 articles, search around a topic, and ask questions grounded in the KB — when there is no
@@ -120,29 +184,7 @@ Save / dislike / "fewer like this" / set a temporary theme all feed back into pr
 Push dimensions rotate using an exposure-deficit multiplier, capped at ±20%, affecting only
 tie-breaking order — never used to push obscure content just to fill a dimension.
 
-## What a card looks like
-
-![Kestrel Radar daily card (illustration)](assets/card.svg)
-
-> Structure illustration (a single card); level one is now an event list, and "details" opens the article list.
-
-## How it compares
-
-| | RSS reader | News aggregator | **Kestrel Radar** |
-|---|---|---|---|
-| Ranking | publish time | editorial / heat | authority + heat momentum + recency + novelty + preference |
-| Dedup | link / title | title | canonical_id + title similarity + **entity conflicts** |
-| Cross-day memory | none | weak | **event date + echo detection + read state** |
-| Interaction loop | none | limited | save / deep read / ask / compare / negative feedback |
-| Data location | cloud | cloud | **local SQLite, no telemetry** |
-| Cost per item | 0 | subscription | LLM only for summaries, topic naming, deep reads, Q&A; daily budget cap |
-
-Among open-source peers, [Horizon](https://github.com/Thysrael/Horizon) covers more sources and
-[TrendRadar](https://github.com/sansan0/TrendRadar) covers more hot lists. Kestrel Radar's
-difference is **single-user + local-first + event-level memory + a deep-reading loop** — not
-collection breadth.
-
-## Channels
+## Delivery channels
 
 | Channel | Command | Capabilities |
 |---|---|---|
@@ -157,22 +199,32 @@ implementing one `Notifier`.
 
 ## Quick start
 
+Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 20+ for the web build.
+
 ```bash
 git clone https://github.com/lieyukou1/kestrel-radar.git
 cd kestrel-radar
 uv sync
-cp .env.example .env          # set DEEPSEEK_API_KEY; Feishu or Webhook
+
+cd web && npm install && npm run build && cd ..
+# output in web/dist, served by the API
+
+cp .env.example .env          # set DEEPSEEK_API_KEY; Feishu / webhook optional
 uv run ai-radar init
 uv run ai-radar collect
-uv run ai-radar digest --channel fake     # inspect the generated Markdown first
+uv run ai-radar digest --channel fake --preview   # inspect the Markdown in outbox first
+
+uv run ai-radar api --port 8765
+# open http://127.0.0.1:8765/
 ```
 
 Run as a service:
 
 ```bash
-uv run ai-radar serve --channel fake      # no credentials: scheduled collect + Markdown
-uv run ai-radar serve --channel webhook   # after setting AI_RADAR_WEBHOOK_URL
-uv run ai-radar serve --channel feishu    # Feishu long connection + interactive cards
+uv run ai-radar serve --channel feishu-notice   # default: scheduled collect + deep-read worker + Feishu notice
+uv run ai-radar serve --channel none            # maintain data only; read everything in the web UI
+uv run ai-radar serve --channel webhook         # after setting AI_RADAR_WEBHOOK_URL
+uv run ai-radar serve --channel feishu          # Feishu long connection + full interactive cards
 ```
 
 Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP_ID` and
@@ -181,16 +233,19 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 
 ## Commands
 
+Every command accepts the global `--domain <id>` flag before the subcommand (default `ai`, also
+settable via `AI_RADAR_DOMAIN`).
+
 | Command | Purpose |
 |---|---|
-| `init` | create the database |
+| `init` | create the current domain's database |
 | `config-check` | validate config and print a summary (no database writes) |
-| `collect` | fetch all enabled sources |
-| `digest --kind daily\|weekly` | build and deliver a digest (`--preview` to rehearse) |
+| `collect` | fetch all enabled sources for the current domain |
+| `digest --kind daily\|weekly` | build and deliver a digest (`--preview`, `--channel`) |
 | `run` | `collect` + `digest`, suitable for cron |
 | `serve --channel feishu-notice\|feishu\|none\|webhook\|fake` | scheduler, deep-read worker, vector backfill; Feishu notice by default |
-| `api --host 127.0.0.1 --port 8765` | local Web API (FastAPI) for the web UI |
-| `status [--format json\|table]` | documents, status distribution, last-7-day sources / cost / deliveries; `table` for a human-readable view |
+| `api --host 127.0.0.1 --port 8765` | local Web API (FastAPI), also serves the built web app |
+| `status [--format json\|table]` | documents, status distribution, last-7-day sources / cost / deliveries |
 | `favorites` / `prefs` | favorites / preferences |
 | `search <query>` | search the whole library, fall back to the web |
 | `related --document-id N` | related articles in the knowledge base |
@@ -205,49 +260,51 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 
 | File | Purpose |
 |---|---|
-| `config/domains/<id>/domain.yaml` | domain pack: taxonomy, keywords, entity/action vocab, prompt tone |
+| `config/domains/<id>/domain.yaml` | domain pack: taxonomy, keywords, entity/action vocab, prompt tone, weight overrides |
 | `config/domains/<id>/sources.yaml` | sources, proxy, per-source limits, keyword filters |
 | `config/domains/<id>/sources.local.yaml` | optional private sources, gitignored, merged at load time |
-| `config/weights.yaml` | scoring weights, momentum, maturity windows, cadence |
+| `config/weights.yaml` | global scoring weights, momentum, maturity windows, cadence |
 | `config/models.yaml` | model names, pricing, daily budget |
-| `.env` | credentials and runtime overrides (proxy, webhook, `AI_RADAR_WEB_URL`) |
+| `.env` | credentials and runtime overrides (proxy, webhook, default domain, web URL) |
+
+Common environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `DEEPSEEK_API_KEY` | model credentials for summaries, topic naming, deep reads and Q&A |
+| `AI_RADAR_DOMAIN` | default domain pack id, `ai` by default |
+| `AI_RADAR_PROXY` | fetch proxy; empty means direct |
+| `AI_RADAR_WEB_URL` | web URL included in notifications, default `http://127.0.0.1:8765` |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_USER_OPEN_ID` | Feishu app credentials and the single recipient |
+| `AI_RADAR_WEBHOOK_URL` / `AI_RADAR_WEBHOOK_FORMAT` / `AI_RADAR_WEBHOOK_PROXY` | webhook URL, format and optional proxy |
 
 The proxy is empty by default; set `AI_RADAR_PROXY` when needed, so personal network settings
 never enter the repo.
-
-Data lives under `data/domains/<id>/` (database and outbox). Switch domains with `--domain <id>`
-or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain. Two packs ship in the
-repo: `ai` (default) and `finance`.
 
 ## Web UI
 
 The web app lives in `web/` (React 19 + Vite + TanStack Query + Tailwind) and is served by the
 API after a build:
 
-```powershell
-cd web
-npm install
-npm run build          # output in web/dist, served by the API
-```
+| Page | Content |
+|---|---|
+| Digest | event list (12 events), date switching, Markdown export |
+| Archive | full-time-range search and filters, independent of freshness |
+| Library | deep-read / saved items, opening the full knowledge card |
+| Ask | retrieval Q&A grounded in the knowledge base; says "no grounding" when unsupported |
+| Status | document distribution, recent jobs, collection and model spend |
+| Settings | pause dimensions / sources, preference weights, database backup download |
+| Article detail | standalone `/articles/{id}`: body, deep-read state, knowledge card, sources, appearances |
 
-```powershell
-python -m ai_radar api --port 8765
-# open http://127.0.0.1:8765/
-```
+Switch domains in the top-right corner; the dropdown shows each domain's latest digest date.
+During development use `npm run dev` (port 5173, `/api` proxied to 8765).
 
-Six main pages: digest (events → articles), archive, library, ask, status, settings. Article
-details open as a standalone page at `/articles/{id}`, with document metadata, sources and
-appearances in the sidebar; switch domains in the top-right corner. Deep reading runs as a
-background job: the article page shows queue status and refreshes the knowledge card
-automatically when it completes. During development use `npm run dev` (port 5173, `/api`
-proxied to 8765).
-
-Feishu now sends a single notice by default; the link comes from `AI_RADAR_WEB_URL`
-(default `http://127.0.0.1:8765`). Use `serve --channel feishu` for the legacy full cards.
+Feishu now sends a single notice by default; the link comes from `AI_RADAR_WEB_URL`. Use
+`serve --channel feishu` for the legacy full cards.
 
 ## Web API
 
-`python -m ai_radar api` serves a local API on `127.0.0.1:8765`; OpenAPI docs live at `/docs`.
+`uv run ai-radar api` serves a local API on `127.0.0.1:8765`; OpenAPI docs live at `/docs`.
 Every endpoint accepts `?domain=ai|finance`.
 
 | Group | Endpoints |
@@ -257,36 +314,41 @@ Every endpoint accepts `?domain=ai|finance`.
 | Events | `GET /api/v1/events?date=`, `GET /api/v1/events/{id}` |
 | Articles | `GET /api/v1/articles/{id}`, `POST /api/v1/articles/{id}/actions` |
 | Archive/search | `GET /api/v1/archive`, `GET /api/v1/search` |
+| Knowledge base | `GET /api/v1/kb` |
 | QA/settings | `POST /api/v1/qa`, `GET/PUT /api/v1/settings` |
 | Jobs | `GET /api/v1/jobs`, `POST /api/v1/jobs/collect`, `POST /api/v1/jobs/digest`, `GET /api/v1/status` |
 | Export/backup | `GET /api/v1/export/digest/{date}?format=markdown\|json`, `GET /api/v1/export/backup` |
 
-The digest page can export the current issue as Markdown, and the settings page can download a
-full SQLite backup of the current domain; the domain dropdown shows each domain's latest digest
-date. Digest jobs triggered from the web default to `channel=fake` and `preview=true`, so they
-only write to the outbox and never push to Feishu by accident.
+Digest jobs triggered from the web default to `channel=fake` and `preview=true`, so they only
+write to the outbox and never push to Feishu by accident.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    S[Sources<br/>arXiv · HF · HN · GitHub<br/>Lobsters · official blogs · RSS] --> N[Normalize<br/>canonical_id · title dedupe · entity conflicts]
-    N --> G[Signals<br/>points · comments · stars · snapshot growth]
-    G --> R[Score & gates<br/>authority · heat · recency · novelty · preference]
-    R --> T[Event grouping<br/>entity buckets → model split]
-    T --> C[Compose<br/>12 events + weekly]
-    C --> P[Deliver<br/>Feishu card · Webhook · local Markdown]
-    P --> D[(SQLite<br/>documents · signals · topics<br/>digests · interactions · kb)]
+    P[Domain packs<br/>ai · finance<br/>domain.yaml · sources.yaml] --> C[Collect<br/>per-source cursors · raw payloads]
+    C --> N[Normalize<br/>canonical_id · title dedupe · entity conflicts]
+    N --> S[Score<br/>authority · heat momentum · recency · novelty · preference]
+    S --> T[Event grouping<br/>entity buckets → model split]
+    T --> G[Compose<br/>12 events + weekly]
+    G --> D[(Per-domain SQLite<br/>data/domains/&lt;id&gt;/ai_radar.db)]
+    D --> W[Web<br/>FastAPI + React SPA]
+    G --> O[Deliver<br/>Feishu notice · Webhook · local Markdown]
     D -. event date & echo detection .-> T
 ```
 
 ```
+config/domains/<id>/   domain pack: taxonomy, sources, prompts, weight overrides
+data/domains/<id>/     domain data: ai_radar.db, outbox/
 src/ai_radar/
+├── api/        FastAPI routes, serialization, static hosting
+├── domain/     domain pack loading and validation
 ├── jobs/       scheduler, collectors, deep-read worker, Feishu router
-├── pipeline/   normalize, scoring, topics, compose, event time, echo
+├── pipeline/   normalize, scoring, topics, compose, event time, echo, search
 ├── adapters/   sources, notifiers, web search, URL safety
 ├── llm/        DeepSeek client, prompts, budget control
 └── store/      SQLite schema and repositories
+web/           React 19 + Vite + TanStack Query + Tailwind
 ```
 
 ## Key rules
@@ -297,8 +359,8 @@ src/ai_radar/
 | Same-day duplicate | `partial_ratio ≥ 75` and `ratio ≥ 50`, or cosine ≥ 0.95 |
 | Entity conflict | only when both sides name a product; disjoint products / versions, or release vs incident → not merged |
 | Pushed guard | documents and titles pushed in the last 30 days never re-enter candidates, even if their status is reset |
-| Maturity | papers 48h / forums 24h / repos 24h / blogs 12h |
-| Event grouping | entity buckets (96h window, ≤20 buckets) → model split; coverage = sources + 0.5× extra same-source articles |
+| Maturity | default papers 48h / forums 24h / repos 24h / blogs 12h; finance uses 2h |
+| Event grouping | entity buckets (default 96h window, ≤20 buckets; finance 48h) → model split; coverage = sources + 0.5× extra same-source articles |
 | Event ranking | top 12 events per day; mainline needs ≥2 items; single-item events are included but rank low |
 | Event date floor | inferred dates older than this round's materials by 30+ days are shown as the round's earliest report date |
 | Echo | follow-up within 3 days of the event; 7-day fallback without event date |
@@ -309,50 +371,64 @@ src/ai_radar/
 
 ## Design trade-offs
 
+- **Domain packs, not forks**: collection, scoring, events, echo and deep reading are
+  domain-agnostic; differences live in taxonomy, sources, prompts and a few weight overrides.
+  A new domain should not copy the codebase.
+- **One database per domain, not a `domain` column**: isolation is complete, backup and deletion
+  are directory operations, and domains never pollute each other's cursors, preferences or memory.
+- **Web-first, Feishu as a notice**: event lists, article pages and knowledge cards need room;
+  cards are good for alerts, not for long reading. Full Feishu cards remain, but are no longer the
+  default delivery.
+- **Events, not articles, as the delivery unit**: article-level ranking is diluted by reprints and
+  same-topic coverage; event-level scoring answers "what actually happened today".
 - **SQLite over Postgres**: single user, single machine, single file. Backup is a file copy.
 - **No multi-tenancy**: it would drag in auth, quotas, audit and isolation, turning a personal
   assistant into a team product — out of scope.
 - **No vector database**: brute-force search over tens of thousands of documents plus a small
   local model (bge-small-zh) is enough; one less service, one less failure mode.
-- **Lobsters instead of Reddit**: Reddit's JSON/RSS now needs OAuth and returns 403/429;
-  Lobsters is stable and the signal is cleaner, even if smaller.
-- **Pluggable channels, not "every channel"**: make Feishu first-class, cover the rest with
-  webhooks, instead of maintaining ten half-finished adapters.
 
 ## Known limits
 
-- Single user: the bot serves one `open_id`; there is no permission model.
+- Single user: listens on `127.0.0.1` by default and has no login or permission model; do not
+  expose the API directly to the public internet.
+- Domain packs are not zero-config: a new domain still needs taxonomy, sources, entity/action
+  vocab and prompts.
 - Event dates are usually blank for non-mainline events (the split model rarely gives a date and
   only the mainline triggers the page-date lookup), so level one reliably shows a date for it only.
 - Level one shows 12 events and any pushed document is deduped for 30 days, so a day consumes
   roughly 30 articles of candidates.
 - Event dates are inferred and can be off by days; inference failure degrades to a window.
-- Summaries, community points and deep-read conclusions are model-generated; the card is an
-  entry point, not a source of truth.
+- Summaries, community points and deep-read conclusions are model-generated; the card and article
+  page are entry points, not sources of truth.
 - Lobsters' AI/ML tags are low-volume; community signal is supplementary.
-- No cross-device sync; the database is the only source of truth.
+- No cross-device sync; the database is the only source of truth. Backups are whole-database
+  snapshots, not per-item merges.
 - WeChat article bodies depend on a third-party transcoding service; if it breaks, that source
   stalls without affecting the others.
 
 ## Roadmap
 
+- [ ] More domain packs (policy, biotech, energy) with an installable pack layout
 - [ ] Telegram / email channels (the `Notifier` interface is already decoupled)
 - [ ] MCP server: let Claude / Cursor read your local intelligence library
 - [ ] Replace regex + word lists with a small entity-recognition model
 - [ ] Weekly "topic evolution" view: a timeline of progress across weeks
-- [ ] Coverage dashboard and finer collector contract tests
 
 ## Development
 
 ```bash
 uv sync --dev
 uv run ruff check .
-uv run pytest -q        # 406 tests
+uv run pytest -q        # 434 backend tests
+
+cd web
+npm run test -- --run   # 17 frontend tests
+npm run build
 ```
 
 Tests cover collector parsing, normalization and dedupe, entity conflicts, scoring and event
-grouping, echo detection, card rendering, channel retries, budget degradation and URL safety.
-GitHub Actions runs ruff and the full suite on Python 3.12 and 3.13.
+grouping, echo detection, domain pack loading, API, export and backup, card rendering, channel
+retries, budget degradation and URL safety. GitHub Actions runs the full suite on push / PR.
 
 ## Security
 

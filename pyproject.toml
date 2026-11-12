@@ -8,7 +8,7 @@ packages = ["src/ai_radar"]
 [project]
 name = "kestrel-radar"
 version = "0.1.0"
-description = "A radar that remembers what it already told you: local-first AI intelligence digest"
+description = "A radar that remembers what it already told you: local-first multi-domain news radar"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Kestrel Radar contributors" }]
