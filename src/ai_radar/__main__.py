@@ -57,6 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="推送渠道：feishu 带交互卡片，webhook/fake 为单向推送",
     )
 
+    api = sub.add_parser("api", help="启动本地 Web API（FastAPI）")
+    api.add_argument("--host", default="127.0.0.1", help="监听地址，默认仅本机")
+    api.add_argument("--port", type=int, default=8765, help="监听端口，默认 8765")
+
     related = sub.add_parser("related", help="查找相关已精读文章")
     related.add_argument("--document-id", type=int, required=True)
 
@@ -134,6 +138,12 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "api":
+        from .api.app import run_api
+
+        run_api(config.root, host=args.host, port=args.port)
         return 0
 
     conn = connect(config.db_path)
