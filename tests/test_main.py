@@ -366,10 +366,12 @@ def test_serve_delegates_to_run_bot(root: Path, monkeypatch) -> None:
     called: dict = {}
     monkeypatch.setattr(
         "ai_radar.jobs.serve.run_bot",
-        lambda config, channel="feishu": called.update(root=config.root, channel=channel),
+        lambda config, channel="feishu-notice": called.update(
+            root=config.root, channel=channel
+        ),
     )
     assert main(["--root", str(root), "serve"]) == 0
-    assert called == {"root": root, "channel": "feishu"}
+    assert called == {"root": root, "channel": "feishu-notice"}
 
 
 def test_serve_passes_explicit_channel(root: Path, monkeypatch) -> None:

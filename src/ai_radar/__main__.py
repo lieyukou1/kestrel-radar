@@ -53,8 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--channel",
         choices=list(CHANNELS),
-        default="feishu",
-        help="推送渠道：feishu 带交互卡片，webhook/fake 为单向推送",
+        default="feishu-notice",
+        help="推送渠道：feishu-notice 只发网页链接，feishu 发完整卡片，none 只生成",
     )
 
     api = sub.add_parser("api", help="启动本地 Web API（FastAPI）")
@@ -81,13 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="预演：卡片带「预览」标记；仍会写库，建议配合副本库使用",
     )
-    digest.add_argument("--channel", choices=["fake", "feishu"], default="fake")
+    digest.add_argument("--channel", choices=list(CHANNELS), default="fake")
 
     run = sub.add_parser("run", help="collect + digest")
     run.add_argument("--date", default=None)
     run.add_argument("--size", type=int, default=None)
     run.add_argument("--kind", choices=["daily", "weekly"], default="daily")
-    run.add_argument("--channel", choices=["fake", "feishu"], default="fake")
+    run.add_argument("--channel", choices=list(CHANNELS), default="fake")
 
     search = sub.add_parser("search", help="按话题检索全库（本地不足时补站外）")
     search.add_argument("query")
@@ -107,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     deep_read = sub.add_parser("deep-read", help="同步执行精读（验证/补跑）")
     deep_read.add_argument("--document-id", type=int, default=None)
     deep_read.add_argument("--limit", type=int, default=1, help="处理队列条数")
-    deep_read.add_argument("--channel", choices=["fake", "feishu"], default="fake")
+    deep_read.add_argument("--channel", choices=list(CHANNELS), default="fake")
 
     return parser
 

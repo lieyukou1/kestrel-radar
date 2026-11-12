@@ -102,9 +102,13 @@ def _run_headless(config: AppConfig, notifier, channel: str) -> None:
         worker.stop()
 
 
-def run_bot(config: AppConfig, *, channel: str = "feishu") -> None:
-    """启动常驻服务；feishu 额外接入长连接与卡片交互，其余渠道为单向推送。"""
-    if channel != "feishu":
+def run_bot(config: AppConfig, *, channel: str = "feishu-notice") -> None:
+    """启动常驻服务。
+
+    feishu 发完整卡片；feishu-notice 只发一条带网页链接的摘要（交互能力不变）；
+    其余渠道不起长连接，只跑定时任务。
+    """
+    if channel not in ("feishu", "feishu-notice"):
         _run_headless(config, build_notifier(config, channel), channel)
         return
     if config.feishu is None:
@@ -125,7 +129,7 @@ def run_bot(config: AppConfig, *, channel: str = "feishu") -> None:
     )
     from lark_oapi.ws import Client as WSClient
 
-    notifier = build_notifier(config, "feishu")
+    notifier = build_notifier(config, channel)
     router = MessageRouter(config, notifier)
 
     def on_card_action(data) -> P2CardActionTriggerResponse:

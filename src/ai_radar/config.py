@@ -85,6 +85,8 @@ class AppConfig:
     webhook: WebhookConfig | None = None
     # 领域包：分类/实体/动作词与权重覆盖都从这里来；手工构造 AppConfig 时可为 None
     domain: DomainProfile | None = None
+    # 网页地址：飞书通知里拼「打开网页」，部署到别的端口时用 AI_RADAR_WEB_URL 覆盖
+    web_url: str = "http://127.0.0.1:8765"
 
     def proxy_for(self, source: SourceConfig) -> str | None:
         override = source.options.get("proxy")
@@ -303,6 +305,9 @@ def load_config(root: Path | None = None, *, domain: str | None = None) -> AppCo
     )
 
     data_dir = root / "data" / "domains" / domain_id
+    web_url = (
+        os.getenv("AI_RADAR_WEB_URL") or "http://127.0.0.1:8765"
+    ).strip().rstrip("/")
     return AppConfig(
         root=root,
         network=network,
@@ -314,4 +319,5 @@ def load_config(root: Path | None = None, *, domain: str | None = None) -> AppCo
         llm=llm,
         webhook=webhook,
         domain=profile,
+        web_url=web_url,
     )
