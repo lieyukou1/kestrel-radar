@@ -187,6 +187,7 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 | `digest --kind daily\|weekly` | build and deliver a digest (`--preview` to rehearse) |
 | `run` | `collect` + `digest`, suitable for cron |
 | `serve --channel feishu\|webhook\|fake` | scheduler, deep-read worker, vector backfill |
+| `api --host 127.0.0.1 --port 8765` | local Web API (FastAPI) for the web UI |
 | `status [--format json\|table]` | documents, status distribution, last-7-day sources / cost / deliveries; `table` for a human-readable view |
 | `favorites` / `prefs` | favorites / preferences |
 | `search <query>` | search the whole library, fall back to the web |
@@ -215,6 +216,24 @@ never enter the repo.
 Data lives under `data/domains/<id>/` (database and outbox). Switch domains with `--domain <id>`
 or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain. Two packs ship in the
 repo: `ai` (default) and `finance`.
+
+## Web API
+
+`python -m ai_radar api` serves a local API on `127.0.0.1:8765`; OpenAPI docs live at `/docs`.
+Every endpoint accepts `?domain=ai|finance`.
+
+| Group | Endpoints |
+|---|---|
+| Domains | `GET /api/v1/domains`, `GET /api/v1/domains/{id}` |
+| Digests | `GET /api/v1/digests`, `GET /api/v1/digests/{date}` |
+| Events | `GET /api/v1/events?date=`, `GET /api/v1/events/{id}` |
+| Articles | `GET /api/v1/articles/{id}`, `POST /api/v1/articles/{id}/actions` |
+| Archive/search | `GET /api/v1/archive`, `GET /api/v1/search` |
+| QA/settings | `POST /api/v1/qa`, `GET/PUT /api/v1/settings` |
+| Jobs | `GET /api/v1/jobs`, `POST /api/v1/jobs/collect`, `POST /api/v1/jobs/digest`, `GET /api/v1/status` |
+
+Digest jobs triggered from the web default to `channel=fake` and `preview=true`, so they only
+write to the outbox and never push to Feishu by accident.
 
 ## Architecture
 

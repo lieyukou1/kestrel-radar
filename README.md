@@ -200,6 +200,7 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 | `digest --kind daily\|weekly` | 生成并投递当期内容（`--preview` 预演） |
 | `run` | `collect` + `digest`，适合 cron |
 | `serve --channel feishu\|webhook\|fake` | 常驻：定时采集、精读 worker、向量回填 |
+| `api --host 127.0.0.1 --port 8765` | 启动本地 Web API（FastAPI），供网页端读取日报/事件/归档 |
 | `status [--format json\|table]` | 文档数、状态分布、最近 7 天的源/花费/推送；`table` 输出人读表格 |
 | `favorites` / `prefs` | 收藏夹 / 偏好设置 |
 | `search <query>` | 全库检索，本地不足时补站外 |
@@ -225,6 +226,22 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 代理默认留空（直连），需要时用 `AI_RADAR_PROXY` 覆盖，不把个人网络配置写进仓库。
 
 数据默认落 `data/domains/<id>/`（库与 outbox）；用 `--domain <id>` 或 `AI_RADAR_DOMAIN` 切换领域，各领域数据、信源、提示词互不干扰。内置两个领域包：`ai`（默认，AI 观察）与 `finance`（金融市场观察）。
+
+## Web API
+
+`python -m ai_radar api` 在 `127.0.0.1:8765` 起一个本地 API，OpenAPI 文档在 `/docs`，所有接口都接受 `?domain=ai|finance`。
+
+| 分组 | 端点 |
+|---|---|
+| 领域 | `GET /api/v1/domains`、`GET /api/v1/domains/{id}` |
+| 日报 | `GET /api/v1/digests`、`GET /api/v1/digests/{date}` |
+| 事件 | `GET /api/v1/events?date=`、`GET /api/v1/events/{id}` |
+| 文章 | `GET /api/v1/articles/{id}`、`POST /api/v1/articles/{id}/actions` |
+| 归档/检索 | `GET /api/v1/archive`、`GET /api/v1/search` |
+| 问答/设置 | `POST /api/v1/qa`、`GET/PUT /api/v1/settings` |
+| 任务 | `GET /api/v1/jobs`、`POST /api/v1/jobs/collect`、`POST /api/v1/jobs/digest`、`GET /api/v1/status` |
+
+网页触发日报默认 `channel=fake`、`preview=true`（只落 outbox），不会误推飞书。
 
 ## 架构
 
