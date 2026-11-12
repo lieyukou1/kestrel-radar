@@ -224,7 +224,7 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 
 代理默认留空（直连），需要时用 `AI_RADAR_PROXY` 覆盖，不把个人网络配置写进仓库。
 
-数据默认落 `data/domains/ai/`（库与 outbox）；用 `--domain <id>` 或 `AI_RADAR_DOMAIN` 切换领域，各领域数据、信源、提示词互不干扰。
+数据默认落 `data/domains/<id>/`（库与 outbox）；用 `--domain <id>` 或 `AI_RADAR_DOMAIN` 切换领域，各领域数据、信源、提示词互不干扰。内置两个领域包：`ai`（默认，AI 观察）与 `finance`（金融市场观察）。
 
 ## 架构
 

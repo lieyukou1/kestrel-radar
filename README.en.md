@@ -212,8 +212,9 @@ Feishu setup: create a self-built app with long-connection mode, put `FEISHU_APP
 The proxy is empty by default; set `AI_RADAR_PROXY` when needed, so personal network settings
 never enter the repo.
 
-Data lives under `data/domains/ai/` (database and outbox). Switch domains with `--domain <id>`
-or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain.
+Data lives under `data/domains/<id>/` (database and outbox). Switch domains with `--domain <id>`
+or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain. Two packs ship in the
+repo: `ai` (default) and `finance`.
 
 ## Architecture
 
