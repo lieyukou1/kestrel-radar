@@ -12,6 +12,8 @@ htmlcov/
 config/**/sources.local.yaml
 data/
 logs/
+web/node_modules/
+web/dist/
 *.db
 *.db-wal
 *.db-shm

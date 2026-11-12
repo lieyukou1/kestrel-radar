@@ -5,6 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Query
 
 from ...pipeline.search import search_documents
+from ...store import repo
 from ..deps import Ctx
 from ..serialize import document_dict
 
@@ -73,6 +74,48 @@ def archive(
         "offset": offset,
         "items": [document_dict(row) for row in rows],
     }
+
+
+@router.get("/kb")
+def kb(
+    ctx: Ctx,
+    dimension: str | None = None,
+    kind: str | None = None,
+    saved: bool = False,
+    since: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """知识库视图：已精读 ∪ 已收藏，按最近精读/收藏时间倒序。"""
+    counts = repo.kb_counts(
+        ctx.conn,
+        only_saved=saved,
+        dimension=dimension,
+        kind=kind,
+        since=since,
+    )
+    facets = repo.kb_facets(ctx.conn, only_saved=saved)
+    rows = repo.kb_entries(
+        ctx.conn,
+        limit=limit,
+        offset=offset,
+        only_saved=saved,
+        dimension=dimension,
+        kind=kind,
+        since=since,
+    )
+    items = []
+    for row in rows:
+        item = document_dict(row)
+        item.update(
+            {
+                "deep_read_at": row["deep_read_at"],
+                "saved_at": row["saved_at"],
+                "deep_read": int(row["deep_read"] or 0),
+            }
+        )
+        items.append(item)
+    return {"counts": counts, "facets": facets, "items": items}
 
 
 @router.get("/search")

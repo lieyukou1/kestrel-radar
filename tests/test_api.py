@@ -245,3 +245,37 @@ def test_qa_without_kb_returns_no_support(client, root: Path) -> None:
     response = client.post("/api/v1/qa", json={"question": "这篇讲了什么？"})
     assert response.status_code == 200
     assert response.json()["supported"] is False
+
+
+def test_kb_endpoint_and_remove(client, root: Path) -> None:
+    seed = _seed(root)
+    document_id = seed["document_id"]
+
+    saved = client.post(
+        f"/api/v1/articles/{document_id}/actions", json={"action": "save"}
+    )
+    assert saved.status_code == 200
+
+    kb = client.get("/api/v1/kb?limit=10").json()
+    assert kb["counts"] == {"deep": 0, "only_saved": 1, "total": 1}
+    assert kb["items"][0]["id"] == document_id
+    assert kb["items"][0]["saved_at"]
+    assert kb["facets"]["dimensions"] == ["1 模型与架构"]
+
+    removed = client.post(
+        f"/api/v1/articles/{document_id}/actions", json={"action": "kb_remove"}
+    )
+    assert removed.status_code == 200
+    assert client.get("/api/v1/kb").json()["counts"]["total"] == 0
+
+
+def test_spa_fallback_when_dist_exists(tmp_path: Path) -> None:
+    shutil.copytree(PROJECT_ROOT / "config", tmp_path / "config")
+    dist = tmp_path / "web" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<html>spa</html>", encoding="utf-8")
+
+    with TestClient(create_app(tmp_path)) as spa_client:
+        assert spa_client.get("/archive").text == "<html>spa</html>"
+        assert spa_client.get("/api/v1/healthz").json()["ok"] is True
+        assert spa_client.get("/api/v1/nope").status_code == 404

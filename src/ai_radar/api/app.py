@@ -3,8 +3,10 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..config import PROJECT_ROOT
 from .routes import articles, assistant, digests, domains, jobs, query
@@ -44,6 +46,22 @@ def create_app(root: Path | None = None) -> FastAPI:
     @app.get("/api/v1/healthz", tags=["health"])
     def healthz() -> dict:
         return {"ok": True, "version": _version()}
+
+    # 构建过前端时由 API 同源托管；开发期走 Vite（5173）代理。
+    dist = Path(app.state.root) / "web" / "dist"
+    if dist.exists():
+        assets = dist / "assets"
+        if assets.exists():
+            app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def spa(full_path: str):
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            target = dist / full_path
+            if full_path and target.is_file():
+                return FileResponse(target)
+            return FileResponse(dist / "index.html")
 
     return app
 

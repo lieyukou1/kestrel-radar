@@ -10,11 +10,13 @@ from ..serialize import document_dict, load_json
 
 router = APIRouter(tags=["articles"])
 
-SUPPORTED_ACTIONS = ("read", "save", "unsave", "dislike", "deep_read")
+SUPPORTED_ACTIONS = ("read", "save", "unsave", "dislike", "deep_read", "kb_remove")
 
 
 class ActionRequest(BaseModel):
-    action: str = Field(description="read / save / unsave / dislike / deep_read")
+    action: str = Field(
+        description="read / save / unsave / dislike / deep_read / kb_remove"
+    )
     reason: str | None = Field(default=None, description="dislike 的原因")
     digest_date: str | None = Field(default=None, description="关联的日报日期")
 
@@ -136,5 +138,11 @@ def act(
             ctx.conn, document_id=document_id, digest_id=digest_id, action="deep_read"
         )
         repo.mark_status(ctx.conn, [document_id], "deep_reading")
+    elif action == "kb_remove":
+        # 已精读的删卡片；只收藏的退回收藏。原文文件不动。
+        if repo.get_kb_article(ctx.conn, document_id) is not None:
+            repo.remove_kb_article(ctx.conn, document_id)
+        else:
+            repo.remove_interaction(ctx.conn, document_id=document_id, action="save")
 
     return {"ok": True, "action": action, **_state(ctx, document_id)}
