@@ -217,6 +217,25 @@ Data lives under `data/domains/<id>/` (database and outbox). Switch domains with
 or `AI_RADAR_DOMAIN`; sources, prompts, and data stay isolated per domain. Two packs ship in the
 repo: `ai` (default) and `finance`.
 
+## Web UI
+
+The web app lives in `web/` (React 19 + Vite + TanStack Query + Tailwind) and is served by the
+API after a build:
+
+```powershell
+cd web
+npm install
+npm run build          # output in web/dist, served by the API
+```
+
+```powershell
+python -m ai_radar api --port 8765
+# open http://127.0.0.1:8765/
+```
+
+Six pages: digest (events → articles), archive, library, ask, status, settings; switch domains
+in the top-right corner. During development use `npm run dev` (port 5173, `/api` proxied to 8765).
+
 ## Web API
 
 `python -m ai_radar api` serves a local API on `127.0.0.1:8765`; OpenAPI docs live at `/docs`.

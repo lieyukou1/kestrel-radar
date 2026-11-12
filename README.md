@@ -227,6 +227,24 @@ uv run ai-radar serve --channel feishu    # 飞书长连接 + 交互卡片
 
 数据默认落 `data/domains/<id>/`（库与 outbox）；用 `--domain <id>` 或 `AI_RADAR_DOMAIN` 切换领域，各领域数据、信源、提示词互不干扰。内置两个领域包：`ai`（默认，AI 观察）与 `finance`（金融市场观察）。
 
+## Web 界面
+
+网页端在 `web/`（React 19 + Vite + TanStack Query + Tailwind），构建后由 `api` 同源托管：
+
+```powershell
+cd web
+npm install
+npm run build          # 产物在 web/dist，api 启动时自动托管
+```
+
+```powershell
+python -m ai_radar api --port 8765
+# 打开 http://127.0.0.1:8765/
+```
+
+六个页面：日报（事件 / 文章两级）、归档、知识库、问答、状态、设置；右上角切换领域。
+开发期用 `npm run dev`（5173 端口，`/api` 自动代理到 8765）。
+
 ## Web API
 
 `python -m ai_radar api` 在 `127.0.0.1:8765` 起一个本地 API，OpenAPI 文档在 `/docs`，所有接口都接受 `?domain=ai|finance`。
