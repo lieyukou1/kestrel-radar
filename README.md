@@ -263,8 +263,9 @@ python -m ai_radar api --port 8765
 | 归档/检索 | `GET /api/v1/archive`、`GET /api/v1/search` |
 | 问答/设置 | `POST /api/v1/qa`、`GET/PUT /api/v1/settings` |
 | 任务 | `GET /api/v1/jobs`、`POST /api/v1/jobs/collect`、`POST /api/v1/jobs/digest`、`GET /api/v1/status` |
+| 导出/备份 | `GET /api/v1/export/digest/{date}?format=markdown\|json`、`GET /api/v1/export/backup` |
 
-网页触发日报默认 `channel=fake`、`preview=true`（只落 outbox），不会误推飞书。
+网页端日报页可把当期导出为 Markdown，设置页可下载当前领域的完整 SQLite 备份；领域下拉会显示各领域最近一期日报日期。网页触发日报默认 `channel=fake`、`preview=true`（只落 outbox），不会误推飞书。
 
 ## 架构
 
