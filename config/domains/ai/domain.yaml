@@ -1,0 +1,427 @@
+# AI 领域包：只放领域数据，不放代码。
+# 分类名会原样写进 documents.primary_tag / preferences / rotation，改名等于改数据口径。
+id: ai
+name: AI 观察
+
+# 8 个主分类：顺序决定维度轮转与意图白名单的先后，不要随意调整。
+taxonomy:
+  - name: 1 模型与架构
+    keywords:
+      - transformer
+      - architecture
+      - mixture of experts
+      - moe
+      - mamba
+      - ssm
+      - foundation model
+      - language model
+      - attention
+      - pretraining
+      - model
+      - 大模型
+      - 基础模型
+      - 语言模型
+      - 架构
+      - 注意力
+      - 混合专家
+      - 神经网络
+      - 深度学习
+  - name: 2 训练与对齐
+    keywords:
+      - training
+      - fine-tune
+      - finetune
+      - rlhf
+      - dpo
+      - grpo
+      - alignment
+      - reward model
+      - synthetic data
+      - distillation
+      - instruction tuning
+      - 训练
+      - 微调
+      - 对齐
+      - 强化学习
+      - 蒸馏
+      - 指令微调
+      - 预训练
+      - 合成数据
+  - name: 3 推理与加速
+    keywords:
+      - inference
+      - quantization
+      - kv cache
+      - speculative decoding
+      - serving
+      - latency
+      - throughput
+      - compiler
+      - kernel
+      - acceleration
+      - efficient
+      - 推理
+      - 量化
+      - 加速
+      - 延迟
+      - 吞吐
+      - 显存
+      - 部署
+      - 编译
+      - 算子
+      - 提速
+  - name: 4 Agent 与应用
+    keywords:
+      - agent
+      - tool use
+      - tool calling
+      - rag
+      - retrieval
+      - workflow
+      - mcp
+      - computer use
+      - multi-agent
+      - assistant
+      - coding agent
+      - 智能体
+      - 工作流
+      - 工具调用
+      - 检索增强
+      - 编程助手
+      - 插件
+  - name: 5 多模态与生成
+    keywords:
+      - multimodal
+      - vision
+      - image
+      - video
+      - speech
+      - audio
+      - diffusion
+      - generation
+      - vlm
+      - text-to-image
+      - text-to-video
+      - 多模态
+      - 视觉
+      - 图像
+      - 视频
+      - 语音
+      - 扩散
+      - 文生图
+      - 文生视频
+      - 生成式
+  - name: 6 系统与基础设施
+    keywords:
+      - distributed
+      - cluster
+      - gpu
+      - scheduler
+      - storage
+      - infrastructure
+      - fault tolerance
+      - checkpoint
+      - system
+      - hardware
+      - 集群
+      - 分布式
+      - 算力
+      - 芯片
+      - 存储
+      - 调度
+      - 基础设施
+      - 服务器
+      - 数据中心
+  - name: 7 理论与可解释性
+    keywords:
+      - theory
+      - scaling law
+      - interpretability
+      - explainability
+      - probing
+      - analysis
+      - theorem
+      - proof
+      - emergent
+      - 理论
+      - 可解释
+      - 机理
+      - 缩放律
+      - 涌现
+      - 证明
+  - name: 8 数据与评测
+    keywords:
+      - dataset
+      - benchmark
+      - evaluation
+      - eval harness
+      - leaderboard
+      - corpus
+      - annotation
+      - metric
+      - 数据集
+      - 基准
+      - 评测
+      - 榜单
+      - 标注
+      - 指标
+      - 测试集
+
+# 内容类型 → 默认分类（标题一个关键词都没命中时用）
+defaults:
+  paper: 1 模型与架构
+  forum: 4 Agent 与应用
+  blog: 4 Agent 与应用
+  repo: 6 系统与基础设施
+
+entities:
+  # 具体产品/公司/模型名：命中即视为实体
+  latin:
+    - jev
+    - qwen
+    - deepseek
+    - kimi
+    - claude
+    - gemini
+    - llama
+    - mistral
+    - grok
+    - sora
+    - glm
+    - minimax
+    - seedance
+    - vidu
+    - hunyuan
+    - ernie
+    - doubao
+    - chatgpt
+    - copilot
+    - cursor
+    - windsurf
+    - devin
+    - midjourney
+    - stable
+    - comfyui
+    - vllm
+    - sglang
+    - ollama
+    - langchain
+    - llamaindex
+    - autogen
+    - crewai
+    - openai
+    - anthropic
+    - nvidia
+    - amd
+    - bytedance
+    - alibaba
+    - tencent
+    - baidu
+    - moonshot
+    - zhipu
+    - baichuan
+    - stepfun
+    - sensetime
+    - unitree
+    - figure
+    - tesla
+    - xai
+    - hopper
+    - blackwell
+  cjk:
+    - 豆包
+    - 文心
+    - 通义
+    - 千问
+    - 混元
+    - 星火
+    - 智谱
+    - 月之暗面
+    - 商汤
+    - 旷视
+    - 智元
+    - 宇树
+    - 深度求索
+    - 面壁
+    - 零一万物
+    - 硅基流动
+    - 百川
+    - 阶跃
+    - 可灵
+    - 即梦
+    - 海螺
+    - 讯飞
+    - 华为
+    - 小米
+    - 阿里
+    - 腾讯
+    - 字节
+    - 百度
+    - 蚂蚁
+    - 网易
+    - 美团
+    - 智源
+    - 书生
+    - 紫东太初
+  # 会议/期刊/预印本平台：会被多篇共享，但不代表「同一件事」
+  venue:
+    - emnlp
+    - neurips
+    - nips
+    - icml
+    - iclr
+    - acl
+    - naacl
+    - eacl
+    - coling
+    - aaai
+    - ijcai
+    - cvpr
+    - iccv
+    - eccv
+    - kdd
+    - sigir
+    - wsdm
+    - recsys
+    - chi
+    - uist
+    - icra
+    - iros
+    - corl
+    - rss
+    - tmlr
+    - jmlr
+    - pami
+    - tpami
+    - openreview
+    - biorxiv
+    - medrxiv
+    - ssrn
+  # 通用词：出现频率高但不能代表「一件事」
+  generic:
+    - ai
+    - llm
+    - llms
+    - gpt
+    - api
+    - apis
+    - gpu
+    - gpus
+    - cpu
+    - tpu
+    - agent
+    - agents
+    - rag
+    - mcp
+    - aigc
+    - agi
+    - vlm
+    - vla
+    - nlp
+    - cv
+    - transformer
+    - diffusion
+    - model
+    - models
+    - benchmark
+    - benchmarks
+    - dataset
+    - datasets
+    - paper
+    - papers
+    - github
+    - arxiv
+    - sota
+    - demo
+    - tutorial
+    - code
+    - tool
+    - tools
+    - framework
+    - pipeline
+    - workflow
+    - multimodal
+    - vision
+    - video
+    - image
+    - speech
+    - audio
+    - token
+    - tokens
+    - prompt
+    - prompts
+    - fine-tuning
+    - finetune
+    - training
+    - inference
+    - deployment
+    - server
+    - cloud
+    - open
+    - source
+    - new
+    - how
+    - why
+    - what
+    - the
+    - and
+    - for
+    - with
+    - from
+    - your
+    - you
+    - this
+    - that
+    - are
+    - not
+    - all
+    - can
+    - its
+    - our
+    - we
+    - it
+  generic_cjk:
+    - 大模型
+    - 智能体
+    - 多模态
+    - 模型
+    - 推理
+    - 训练
+    - 开源
+    - 论文
+    - 技术
+    - 架构
+    - 应用
+    - 平台
+    - 发布
+    - 新进展
+    - 人工智能
+    - 机器学习
+    - 深度学习
+    - 神经网络
+    - 算法
+    - 芯片
+    - 算力
+    - 机器人
+    - 评测
+    - 数据集
+
+# 事件键里的动作分类：只用于跨天认出同一件事和兜底分组，不参与打分。
+# 顺序即优先级（先命中者生效）。
+actions:
+  - name: incident
+    pattern: 故障|宕机|泄露|诉讼|起诉|争议|封禁|下架|撤回|裁员
+  - name: funding
+    pattern: 融资|估值|IPO|上市|募资|轮融资|路演
+  - name: benchmark
+    pattern: 评测|榜单|基准|跑分|得分|benchmark|leaderboard|beats?
+    ignore_case: true
+  - name: partnership
+    pattern: 合作|签约|结盟|接入|集成|联手
+  - name: release
+    pattern: 发布|上线|推出|正式开放|开源|available|launch|release
+    ignore_case: true
+default_action: other
+
+# 领域级权重覆盖：与 config/weights.yaml 深合并，留空表示沿用全局默认。
+weights_overrides: {}

@@ -7,6 +7,14 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from .domain.profile import (
+    DEFAULT_DOMAIN,
+    DomainProfile,
+    default_profile,
+    domain_path,
+    load_profile,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 SUPPORTED_SOURCE_KINDS = ("arxiv", "hackernews", "hf_daily", "github", "rss", "lobsters")
@@ -75,6 +83,8 @@ class AppConfig:
     feishu: FeishuConfig | None = None
     llm: LLMConfig | None = None
     webhook: WebhookConfig | None = None
+    # 领域包：分类/实体/动作词与权重覆盖都从这里来；手工构造 AppConfig 时可为 None
+    domain: DomainProfile | None = None
 
     def proxy_for(self, source: SourceConfig) -> str | None:
         override = source.options.get("proxy")
@@ -175,9 +185,28 @@ def _validate_sources(items: list[dict], network_doc: dict) -> None:
         raise ConfigError("配置有问题：\n- " + "\n- ".join(problems))
 
 
-def load_config(root: Path | None = None) -> AppConfig:
+def _merge_weights(base: dict, override: dict) -> dict:
+    """领域包的 weights_overrides 与全局 weights 深合并（领域优先）。"""
+    merged = dict(base or {})
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_weights(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(root: Path | None = None, *, domain: str | None = None) -> AppConfig:
     root = Path(root) if root else PROJECT_ROOT
     load_dotenv(root / ".env")
+
+    domain_id = (domain or os.getenv("AI_RADAR_DOMAIN") or DEFAULT_DOMAIN).strip()
+    # `--root` 指向的精简目录可能只带三个 yaml：默认领域缺失时退回仓库自带的 AI 包；
+    # 显式指定其他领域则必须存在，避免拼错域名后静默跑错口径。
+    if domain_id == DEFAULT_DOMAIN and not domain_path(root, domain_id).exists():
+        profile = default_profile()
+    else:
+        profile = load_profile(root, domain_id)
 
     sources_path = root / "config" / "sources.yaml"
     local_sources_path = root / "config" / "sources.local.yaml"
@@ -195,6 +224,7 @@ def load_config(root: Path | None = None) -> AppConfig:
             raise ConfigError("config/sources.local.yaml 的 sources 必须是列表")
         sources_items = _merge_sources(sources_items, local_items)
     weights = yaml.safe_load(weights_path.read_text(encoding="utf-8")) or {}
+    weights = _merge_weights(weights, profile.weights_overrides)
     models_doc = yaml.safe_load(models_path.read_text(encoding="utf-8")) or {}
 
     network_doc = sources_doc.get("network") or {}
@@ -276,4 +306,5 @@ def load_config(root: Path | None = None) -> AppConfig:
         feishu=feishu,
         llm=llm,
         webhook=webhook,
+        domain=profile,
     )

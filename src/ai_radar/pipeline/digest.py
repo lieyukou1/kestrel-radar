@@ -750,9 +750,14 @@ def _apply_theme_label(
     if not label:
         return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
     # 主线必须是一件事：会议/期刊名和「N 篇论文」这类集合名都不算。
-    if topics.is_bucket_label(label) or entities.is_venue(label):
+    profile = getattr(config, "domain", None)
+    if topics.is_bucket_label(label) or entities.is_venue(label, profile=profile):
         label = fallback[0]
-    if not label.strip() or topics.is_bucket_label(label) or entities.is_venue(label):
+    if (
+        not label.strip()
+        or topics.is_bucket_label(label)
+        or entities.is_venue(label, profile=profile)
+    ):
         return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
     if when:
         return ThemeLabel(label, why, when, "模型推断", is_update, change)
@@ -828,6 +833,7 @@ def _found_events(
 ) -> tuple[list[events.Event], dict]:
     """粗分组 → 模型切事件；模型不可用就退回「一个实体桶一件事」。"""
     weights = config.weights
+    profile = getattr(config, "domain", None)
     cfg = weights.get("topics") or {}
     sources_map = repo.document_sources_map(conn)
     # 事件池 = 近 N 小时全量（不被分数截断）∪ 分数最高的一批（兜住跨天仍在发酵的事件）。
@@ -847,6 +853,7 @@ def _found_events(
         min_members=int(cfg.get("min_members", 2)),
         entity_max_docs=int(cfg.get("max_docs", 12)),
         max_buckets=int(cfg.get("max_buckets", 20)),
+        profile=profile,
     )
     stats = {"buckets": len(buckets), "events": 0, "source": "fallback"}
     found: list[events.Event] = []
@@ -864,6 +871,7 @@ def _found_events(
                 sources_map=sources_map,
                 authority_weights=weights.get("authority"),
                 now=now,
+                profile=profile,
             )
             if found:
                 stats["source"] = "model"
@@ -873,6 +881,7 @@ def _found_events(
             sources_map=sources_map,
             authority_weights=weights.get("authority"),
             now=now,
+            profile=profile,
         )
     # 单篇事件：没被任何事件收留的内容也各算一件事，保证一级列表不会因为聚类弱而空。
     used = {int(item["doc"]["id"]) for event in found for item in event.items}
@@ -884,6 +893,7 @@ def _found_events(
         now=now,
         limit=int(cfg.get("standalone", 40)),
         min_score=float(cfg.get("standalone_min_score", 0.5)),
+        profile=profile,
     )
     found.extend(singles)
     found.sort(key=lambda event: event.score, reverse=True)
@@ -911,14 +921,14 @@ def _event_continuation(
     )
 
 
-def _event_label(event: events.Event) -> str:
+def _event_label(event: events.Event, *, profile=None) -> str:
     """展示用标题：模型起的名字优先，兜底事件的实体名换成它最高分那篇的标题。"""
     label = str(event.label or "").strip()
     if (
         label
         and label != event.entity
         and not topics.is_bucket_label(label)
-        and not entities.is_venue(label)
+        and not entities.is_venue(label, profile=profile)
     ):
         return label
     if not event.items:
@@ -956,7 +966,9 @@ def _label_event(
             ),
         )
     label = str(event.label or "").strip()
-    if topics.is_bucket_label(label) or entities.is_venue(label):
+    if topics.is_bucket_label(label) or entities.is_venue(
+        label, profile=getattr(config, "domain", None)
+    ):
         label = ""
     if not label:
         return ThemeLabel(why="今日没有清晰的跨来源主线，只推送时效性内容。")
@@ -995,6 +1007,7 @@ def build_digest(
         repo.reset_digest(conn, int(existing["id"]))
 
     weights = config.weights
+    profile = getattr(config, "domain", None)
     cadence = weights.get("cadence") or {}
     scored = collect_candidates(conn, config, now=now)
     candidate_count = len(scored)
@@ -1121,7 +1134,7 @@ def build_digest(
             e_day, e_new, e_first = day_index, new_count, first_date
             entity = event.entity
         else:
-            label, summary = _event_label(event), event.why
+            label, summary = _event_label(event, profile=profile), event.why
             event_when, event_note = event.when, "模型推断" if event.when else ""
             e_day, e_new, e_first = _event_continuation(conn, event, now.date())
             # 非主线事件不写实体，避免污染主线回声判定。

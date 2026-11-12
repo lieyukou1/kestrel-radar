@@ -17,18 +17,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from ..domain.profile import DomainProfile, default_profile
 from ..util import parse_iso
 from . import entities
 
-# 事件键里的动作分类：只用于跨天认出同一件事和兜底分组，不参与打分。
-ACTION_PATTERNS = (
-    ("incident", re.compile(r"故障|宕机|泄露|诉讼|起诉|争议|封禁|下架|撤回|裁员")),
-    ("funding", re.compile(r"融资|估值|IPO|上市|募资|轮融资|路演")),
-    ("benchmark", re.compile(r"评测|榜单|基准|跑分|得分|benchmark|leaderboard|beats?", re.I)),
-    ("partnership", re.compile(r"合作|签约|结盟|接入|集成|联手")),
-    ("release", re.compile(r"发布|上线|推出|正式开放|开源|available|launch|release", re.I)),
-)
-DEFAULT_ACTION = "other"
 # 一个事件最多呈现几条；多出来的留在候选池里做快讯。
 MAX_EVENT_ITEMS = 6
 
@@ -75,11 +67,8 @@ def _doc_id(entry: dict) -> int:
         return 0
 
 
-def action_of(text: str) -> str:
-    for name, pattern in ACTION_PATTERNS:
-        if pattern.search(str(text or "")):
-            return name
-    return DEFAULT_ACTION
+def action_of(text: str, *, profile: DomainProfile | None = None) -> str:
+    return (profile or default_profile()).action_of(text)
 
 
 def make_key(entity: str, action: str, when: str = "") -> str:
@@ -91,14 +80,15 @@ def make_key(entity: str, action: str, when: str = "") -> str:
     return f"{entity}|{action}|{when}"
 
 
-def _dominant_action(items: list[dict]) -> str:
+def _dominant_action(items: list[dict], *, profile: DomainProfile | None = None) -> str:
+    default = (profile or default_profile()).default_action
     counter: Counter[str] = Counter(
-        action_of(str(item["doc"]["title"] or "")) for item in items
+        action_of(str(item["doc"]["title"] or ""), profile=profile) for item in items
     )
     for name, _count in counter.most_common():
-        if name != DEFAULT_ACTION:
+        if name != default:
             return name
-    return DEFAULT_ACTION
+    return default
 
 
 def _recency_share(items: list[dict], now: datetime | None) -> float:
@@ -161,12 +151,15 @@ def group_buckets(
     entity_max_docs: int = 12,
     max_buckets: int = 20,
     max_items: int = 8,
+    profile: DomainProfile | None = None,
 ) -> list[Bucket]:
     """按实体粗分组；一条内容只归到最具体的实体，避免一稿多桶。"""
     if not entries:
         return []
     raw = {
-        _doc_id(entry): entities.extract(str(entry["doc"]["title"] or ""))
+        _doc_id(entry): entities.extract(
+            str(entry["doc"]["title"] or ""), profile=profile
+        )
         for entry in entries
     }
     kept = entities.filter_by_frequency(
@@ -234,6 +227,7 @@ def build_events(
     sources_map: dict[int, set[str]] | None = None,
     authority_weights: dict | None = None,
     now: datetime | None = None,
+    profile: DomainProfile | None = None,
 ) -> list[Event]:
     """把模型的分组还原成事件；只接受桶内真实存在的条目 id。"""
     by_index = {bucket.index: bucket for bucket in buckets}
@@ -264,7 +258,10 @@ def build_events(
             continue
         label = str(item.get("label") or "").strip()[:40] or bucket.entity
         when = _clean_when(item.get("when"))
-        action = action_of(f"{label} {' '.join(str(e['doc']['title'] or '') for e in chosen)}")
+        action = action_of(
+            f"{label} {' '.join(str(e['doc']['title'] or '') for e in chosen)}",
+            profile=profile,
+        )
         score, source_count = score_items(
             chosen,
             sources_map=sources_map,
@@ -303,6 +300,7 @@ def standalone_events(
     limit: int = 40,
     min_score: float = 0.5,
     kinds: tuple[str, ...] = ("blog", "forum"),
+    profile: DomainProfile | None = None,
 ) -> list[Event]:
     """没归进任何事件的内容，各自算一个「单篇事件」。
 
@@ -326,7 +324,7 @@ def standalone_events(
         title = str(entry["doc"]["title"] or "").strip()
         if not title:
             continue
-        names = entities.extract(title)
+        names = entities.extract(title, profile=profile)
         entity = max(names, key=len) if names else ""
         score, source_count = score_items(
             [entry],
@@ -337,7 +335,7 @@ def standalone_events(
         singles.append(
             Event(
                 # 单篇事件的键带上文档 id：同一天同一产品的两条独立新闻不能互相认亲。
-                key=f"{entity or 'misc'}|{action_of(title)}|doc{document_id}",
+                key=f"{entity or 'misc'}|{action_of(title, profile=profile)}|doc{document_id}",
                 label=title[:40],
                 entity=entity,
                 items=[entry],
@@ -355,6 +353,7 @@ def fallback_events(
     sources_map: dict[int, set[str]] | None = None,
     authority_weights: dict | None = None,
     now: datetime | None = None,
+    profile: DomainProfile | None = None,
 ) -> list[Event]:
     """模型不可用时的兜底：一个实体桶就是一件事。
 
@@ -362,7 +361,7 @@ def fallback_events(
     """
     events: list[Event] = []
     for bucket in buckets:
-        action = _dominant_action(bucket.items)
+        action = _dominant_action(bucket.items, profile=profile)
         score, source_count = score_items(
             bucket.items,
             sources_map=sources_map,
