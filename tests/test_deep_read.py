@@ -123,26 +123,78 @@ def test_deep_read_persists_kb_and_chunks(tmp_path: Path, monkeypatch) -> None:
     )
 
     def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
-        if "片段内容" in user:
+        if "请先做一次预读" in user:
             return json.dumps(
                 {
-                    "problem": "p",
-                    "method": "m",
-                    "evidence": ["e1"],
-                    "conclusions": ["c1"],
-                    "limitations": ["l1"],
-                    "claims": [{"kind": "result", "text": "claim one"}],
+                    "thesis": "paper thesis",
+                    "problem": "merged problem",
+                    "article_type": "论文",
+                    "audience": "工程师",
+                    "method_summary": "merged method",
+                    "outline": [
+                        {"heading": "Abstract", "role": "intro", "summary": "摘要"}
+                    ],
+                    "questions": ["它解决了什么？"],
+                    "key_terms": [],
+                },
+                ensure_ascii=False,
+            ), Usage(1, 1, 0.0)
+        if "请为这一部分做小结" in user:
+            return json.dumps(
+                {"summary": "这一部分给出方法", "key_claims": [1], "open_questions": []},
+                ensure_ascii=False,
+            ), Usage(1, 1, 0.0)
+        if "请做论证重建" in user:
+            return json.dumps(
+                {
+                    "thesis": "arg thesis",
+                    "main_claims": [
+                        {"claim_id": 1, "text": "claim one", "supports": [], "note": ""}
+                    ],
+                    "relations": [],
+                    "contradictions": [],
+                    "unverified": [],
+                },
+                ensure_ascii=False,
+            ), Usage(1, 1, 0.0)
+        if "请写一段 1200-2000 字" in user:
+            return "这是精读叙事 [C1]。", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return json.dumps(
+                {
+                    "unverified": [],
+                    "weak_evidence": ["样本很小"],
+                    "counterpoints": [],
+                    "open_questions": [],
                 },
                 ensure_ascii=False,
             ), Usage(1, 1, 0.0)
         return json.dumps(
             {
-                "problem": "merged problem",
-                "method": "merged method",
-                "evidence": ["e1", "e2"],
-                "conclusions": ["c1"],
+                "section_summary": "这一节给出方法",
+                "claims": [
+                    {
+                        "text": "claim one",
+                        "question": "它做了什么？",
+                        "claim_type": "main",
+                        "confidence": "source",
+                        "quote": "quote one",
+                        "evidence": [
+                            {
+                                "kind": "data",
+                                "quote": "e1",
+                                "metric": "acc",
+                                "value": "90",
+                                "unit": "%",
+                                "baseline": "base",
+                                "condition": "c1",
+                                "sample": "n=10",
+                            }
+                        ],
+                    }
+                ],
                 "limitations": ["l1"],
-                "l3": "deep explanation",
+                "open_questions": ["oq"],
             },
             ensure_ascii=False,
         ), Usage(1, 1, 0.0)
@@ -159,10 +211,129 @@ def test_deep_read_persists_kb_and_chunks(tmp_path: Path, monkeypatch) -> None:
 
     kb = repo.get_kb_article(conn, document_id)
     assert kb["problem"] == "merged problem"
-    assert json.loads(kb["evidence"]) == ["e1", "e2"]
+    assert json.loads(kb["evidence"]) == ["e1"]
     assert repo.get_document(conn, document_id)["status"] == "kb_ready"
     assert len(repo.list_chunks(conn, document_id)) == result.chunks
     assert len(repo.list_claims(conn, document_id)) == result.claims
+
+    # 重读同一篇要幂等：旧证据/关系不能把 claims 的外键拦住。
+    again = deep_read_document(conn, config, repo.get_document(conn, document_id))
+    assert again.claims == result.claims
+    assert len(repo.list_claims(conn, document_id)) == again.claims
+
+
+def test_deep_read_covers_long_documents(tmp_path: Path, monkeypatch) -> None:
+    """长文不再只读前 20 块；分段小结和覆盖率要一起落库。"""
+    config = make_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    document_id = seed_document(conn)
+
+    monkeypatch.setattr(
+        deep_read_mod,
+        "fetch_html",
+        lambda url, proxy, timeout=60.0: ("<html><body>long</body></html>", url),
+    )
+    chunks = [
+        {
+            "section": f"Section {index}",
+            "ord": index,
+            "text": f"body {index}",
+            "anchor": None,
+        }
+        for index in range(1, 26)
+    ]
+    monkeypatch.setattr(
+        deep_read_mod, "chunk_markdown", lambda text, max_chars=6000: chunks
+    )
+
+    def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
+        if "请先做一次预读" in user:
+            return (
+                '{"thesis": "long thesis", "problem": "p", "method_summary": "m", '
+                '"outline": [], "questions": []}',
+                Usage(1, 1, 0.0),
+            )
+        if "请为这一部分做小结" in user:
+            return (
+                '{"summary": "part summary", "key_claims": [1], "open_questions": []}',
+                Usage(1, 1, 0.0),
+            )
+        if "请做论证重建" in user:
+            return (
+                '{"thesis": "long thesis", "main_claims": '
+                '[{"claim_id": 1, "text": "main", "supports": [2]}], '
+                '"relations": [{"from": 2, "to": 1, "relation": "supports", "note": "n"}]}',
+                Usage(1, 1, 0.0),
+            )
+        if "请写一段 1200-2000 字" in user:
+            return "长文叙事 [C1][C2]。", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return ('{"unverified": [], "weak_evidence": []}', Usage(1, 1, 0.0))
+        return (
+            '{"section_summary": "s", "claims": [{"text": "claim", "claim_type": "main", '
+            '"confidence": "source", "quote": "quote", "evidence": []}], '
+            '"limitations": [], "open_questions": []}',
+            Usage(1, 1, 0.0),
+        )
+
+    monkeypatch.setattr(deep_read_mod.DeepSeekLLM, "chat", fake_chat)
+
+    result = deep_read_document(conn, config, repo.get_document(conn, document_id))
+    assert result.chunks == 25
+    assert result.claims == 25
+    assert len(result.card["parts"]) == 4
+    assert result.card["coverage"] == {
+        "chunks_total": 25,
+        "chunks_read": 25,
+        "chunks_skipped": 0,
+    }
+
+
+def test_deep_read_skips_broken_section_json(tmp_path: Path, monkeypatch) -> None:
+    """单个分块 JSON 坏掉时跳过该块，整篇精读仍然完成。"""
+    config = make_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    document_id = seed_document(conn)
+
+    monkeypatch.setattr(
+        deep_read_mod,
+        "fetch_html",
+        lambda url, proxy, timeout=60.0: ("<html><body>x</body></html>", url),
+    )
+    monkeypatch.setattr(
+        deep_read_mod,
+        "chunk_markdown",
+        lambda text, max_chars=6000: [
+            {"section": "Intro", "ord": 1, "text": "body", "anchor": None}
+        ],
+    )
+
+    def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
+        if "请先做一次预读" in user:
+            return (
+                '{"thesis": "t", "problem": "p", "method_summary": "m", '
+                '"outline": [], "questions": []}',
+                Usage(1, 1, 0.0),
+            )
+        if "请做论证重建" in user:
+            return ('{"thesis": "t", "main_claims": [], "relations": []}', Usage(1, 1, 0.0))
+        if "请写一段 1200-2000 字" in user:
+            return "叙事", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return ('{"unverified": [], "weak_evidence": []}', Usage(1, 1, 0.0))
+        if "请为这一部分做小结" in user:
+            return ('{"summary": "s", "key_claims": []}', Usage(1, 1, 0.0))
+        return ('{"section_summary": "坏掉的 JSON', Usage(1, 1, 0.0))
+
+    monkeypatch.setattr(deep_read_mod.DeepSeekLLM, "chat", fake_chat)
+
+    result = deep_read_document(conn, config, repo.get_document(conn, document_id))
+    assert result.chunks == 1
+    assert result.claims == 0
+    assert result.card["coverage"]["chunks_skipped"] == 1
+    assert repo.get_kb_article(conn, document_id) is not None
 
 
 def test_arxiv_pdf_url() -> None:
@@ -195,15 +366,21 @@ def test_deep_read_falls_back_to_pdf(tmp_path: Path, monkeypatch) -> None:
     )
 
     def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
-        if "片段内容" in user:
+        if "请先做一次预读" in user:
             return (
-                '{"problem": "p", "method": "m", "evidence": [], "conclusions": [], '
-                '"limitations": [], "claims": [{"kind": "finding", "text": "c"}]}',
+                '{"thesis": "t", "problem": "p", "method_summary": "m", '
+                '"outline": [], "questions": []}',
                 Usage(1, 1, 0.0),
             )
+        if "请做论证重建" in user:
+            return ('{"thesis": "t", "main_claims": [], "relations": []}', Usage(1, 1, 0.0))
+        if "请写一段 1200-2000 字" in user:
+            return "叙事", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return ('{"unverified": [], "weak_evidence": []}', Usage(1, 1, 0.0))
         return (
-            '{"problem": "p2", "method": "m2", "evidence": [], "conclusions": [], '
-            '"limitations": [], "l3": "x"}',
+            '{"section_summary": "s", "claims": [], "limitations": [], '
+            '"open_questions": []}',
             Usage(1, 1, 0.0),
         )
 
@@ -302,7 +479,7 @@ def test_deep_read_attaches_hn_community(tmp_path: Path, monkeypatch) -> None:
     )
 
     def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
-        if "评论" in user and "片段内容" not in user:
+        if "评论" in user and "片段内容" not in user and "请做" not in user:
             return (
                 json.dumps(
                     {"consensus": ["共识"], "disputes": ["有分歧"], "tips": []},
@@ -310,15 +487,21 @@ def test_deep_read_attaches_hn_community(tmp_path: Path, monkeypatch) -> None:
                 ),
                 Usage(1, 1, 0.0),
             )
-        if "片段内容" in user:
+        if "请先做一次预读" in user:
             return (
-                '{"problem": "p", "method": "m", "evidence": [], "conclusions": [], '
-                '"limitations": [], "claims": []}',
+                '{"thesis": "t", "problem": "p", "method_summary": "m", '
+                '"outline": [], "questions": []}',
                 Usage(1, 1, 0.0),
             )
+        if "请做论证重建" in user:
+            return ('{"thesis": "t", "main_claims": [], "relations": []}', Usage(1, 1, 0.0))
+        if "请写一段 1200-2000 字" in user:
+            return "叙事", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return ('{"unverified": [], "weak_evidence": []}', Usage(1, 1, 0.0))
         return (
-            '{"problem": "p2", "method": "m2", "evidence": [], "conclusions": [], '
-            '"limitations": [], "l3": "x"}',
+            '{"section_summary": "s", "claims": [], "limitations": [], '
+            '"open_questions": []}',
             Usage(1, 1, 0.0),
         )
 

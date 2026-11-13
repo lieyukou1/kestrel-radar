@@ -37,7 +37,7 @@ export function EventCard({
         aria-expanded={expanded}
       >
         <span
-          className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+          className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${
             lead ? "bg-cyan-500 text-slate-950" : "bg-slate-800 text-slate-300"
           }`}
         >
@@ -45,7 +45,7 @@ export function EventCard({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold leading-6 text-slate-100">
+            <span className="text-base font-semibold leading-7 text-slate-100 sm:text-lg">
               {event.label}
             </span>
             {event.dimension ? <Badge tone="cyan">{event.dimension}</Badge> : null}
@@ -56,17 +56,17 @@ export function EventCard({
               <Badge tone="emerald">+{event.new_count} 新</Badge>
             ) : null}
           </span>
-          <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+          <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <span>{event.item_count} 篇</span>
             {event.event_date ? <span>事件日 {event.event_date}</span> : null}
           </span>
           {event.summary ? (
-            <span className="mt-2 block text-xs leading-5 text-slate-400">
+            <span className="mt-2 block text-sm leading-6 text-slate-400">
               {text(event.summary)}
             </span>
           ) : null}
         </span>
-        <span className="mt-1 text-xs text-slate-500">{expanded ? "收起" : "展开"}</span>
+        <span className="mt-1 text-sm text-slate-500">{expanded ? "收起" : "展开"}</span>
       </button>
 
       {expanded ? (

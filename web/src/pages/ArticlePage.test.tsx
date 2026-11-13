@@ -39,6 +39,8 @@ const detail: ArticleDetail = {
   },
   summary: null,
   kb: null,
+  reading: null,
+  sections: [],
   claims: [],
   notes: [],
   sources: [],
@@ -113,5 +115,50 @@ describe("ArticlePage", () => {
     expect(
       screen.getByRole("button", { name: "移出知识库" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the new reading view with numbered, clickable citations", async () => {
+    vi.mocked(api.article).mockResolvedValue({
+      ...detail,
+      reading: {
+        thesis: "Carbon 用更低成本达到第一梯队",
+        narrative: "作者先给出评测结果 [C1]。",
+        questions: [],
+        outline: [],
+        main_claims: [
+          {
+            claim_id: 101,
+            text: "Carbon 在 CursorBench 上排名第一",
+            note: "支撑全文",
+          },
+        ],
+        relations: [],
+        critique: {},
+      },
+      claims: [
+        {
+          id: 101,
+          kind: "finding",
+          text: "Carbon 在 CursorBench 上排名第一",
+          claim_type: "main",
+          confidence: "source",
+          quote: "CursorBench 53.9%",
+          anchor: "评测 · 片段 1",
+          question: "CursorBench 表现如何？",
+          status: "active",
+          section_id: null,
+          evidence: [],
+        },
+      ],
+    });
+
+    renderArticle();
+
+    expect(await screen.findByText("核心主张")).toBeInTheDocument();
+    expect(screen.getByText("C1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "[C1]" })).toHaveAttribute(
+      "href",
+      "#claim-C1",
+    );
   });
 });

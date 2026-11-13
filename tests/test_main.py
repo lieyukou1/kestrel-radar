@@ -73,6 +73,7 @@ def test_parser_builds_every_subcommand() -> None:
         "favorites": [],
         "prefs": [],
         "backfill-vectors": [],
+        "reindex": ["--limit", "2"],
         "serve": [],
         "feishu-info": [],
         "related": ["--document-id", "3"],

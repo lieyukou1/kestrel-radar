@@ -83,9 +83,23 @@ def init_db(conn: sqlite3.Connection) -> None:
     _add_column(conn, "topics", "first_date", "first_date TEXT")
     _add_column(conn, "topics", "day_index", "day_index INTEGER NOT NULL DEFAULT 1")
     _add_column(conn, "topics", "new_count", "new_count INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "kb_articles", "thesis", "thesis TEXT")
+    _add_column(conn, "kb_articles", "narrative", "narrative TEXT")
+    _add_column(conn, "kb_articles", "outline_json", "outline_json TEXT")
+    _add_column(conn, "kb_articles", "questions_json", "questions_json TEXT")
+    _add_column(conn, "kb_articles", "critique_json", "critique_json TEXT")
+    _add_column(conn, "kb_articles", "reading_json", "reading_json TEXT")
+    _add_column(conn, "claims", "section_id", "section_id INTEGER")
+    _add_column(conn, "claims", "claim_type", "claim_type TEXT")
+    _add_column(conn, "claims", "confidence", "confidence TEXT")
+    _add_column(conn, "claims", "quote", "quote TEXT")
+    _add_column(conn, "claims", "anchor", "anchor TEXT")
+    _add_column(conn, "claims", "question", "question TEXT")
+    _add_column(conn, "claims", "status", "status TEXT NOT NULL DEFAULT 'active'")
+    _add_column(conn, "claims", "retrieval_text", "retrieval_text TEXT")
     _migrate_digest_uniqueness(conn)
     conn.execute(
-        "INSERT INTO meta(key, value) VALUES('schema_version', '7') "
+        "INSERT INTO meta(key, value) VALUES('schema_version', '8') "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     )
     conn.commit()

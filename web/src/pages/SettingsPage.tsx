@@ -10,6 +10,8 @@ import {
   Loading,
   Panel,
   buttonClass,
+  pageHintClass,
+  pageTitleClass,
   primaryButtonClass,
 } from "../components/ui";
 
@@ -60,8 +62,8 @@ export function SettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">设置</h1>
-        <p className="mt-1 text-xs text-slate-500">
+        <h1 className={pageTitleClass}>设置</h1>
+        <p className={pageHintClass}>
           暂停的内容不会进入候选池；偏好权重由收藏与「不感兴趣」自动调整。
         </p>
       </div>
@@ -74,7 +76,7 @@ export function SettingsPage() {
       <Panel
         title="暂停分类"
         extra={
-          <span className="text-[11px] text-slate-500">
+          <span className="text-sm text-slate-500">
             取消勾选即恢复
           </span>
         }
@@ -86,7 +88,7 @@ export function SettingsPage() {
               <button
                 key={item.name}
                 type="button"
-                className={`rounded-full border px-3 py-1 text-xs transition ${
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${
                   paused
                     ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
                     : "border-slate-700 text-slate-400 hover:border-cyan-500/40"
@@ -112,7 +114,7 @@ export function SettingsPage() {
           {(domainInfo.data?.sources ?? []).map((source) => (
             <label
               key={source.id}
-              className="flex items-center gap-2 rounded-md border border-slate-800 px-3 py-2 text-xs text-slate-300"
+              className="flex items-center gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-300"
             >
               <input
                 type="checkbox"
@@ -135,12 +137,12 @@ export function SettingsPage() {
       <Panel
         title="数据备份"
         extra={
-          <span className="text-[11px] text-slate-500">
+          <span className="text-sm text-slate-500">
             {domainInfo.data?.db ?? ""}
           </span>
         }
       >
-        <p className="text-xs leading-5 text-slate-500">
+        <p className="text-sm leading-6 text-slate-500">
           导出当前领域的完整 SQLite 数据库（含 WAL 中已提交的数据），可直接用于迁移或离线分析。
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -153,12 +155,12 @@ export function SettingsPage() {
             下载数据库备份
           </a>
           {domainInfo.data?.last_digest ? (
-            <span className="text-[11px] text-slate-500">
+            <span className="text-sm text-slate-500">
               最近日报：{domainInfo.data.last_digest.date} ·{" "}
               {domainInfo.data.last_digest.kind} · {domainInfo.data.last_digest.status}
             </span>
           ) : (
-            <span className="text-[11px] text-slate-500">这个领域还没有日报。</span>
+            <span className="text-sm text-slate-500">这个领域还没有日报。</span>
           )}
         </div>
       </Panel>
@@ -167,7 +169,7 @@ export function SettingsPage() {
         {Object.keys(settings.data?.preferences ?? {}).length === 0 ? (
           <Empty>还没有偏好记录。收藏、不感兴趣会自动生成。</Empty>
         ) : (
-          <div className="grid gap-1 text-xs sm:grid-cols-2">
+          <div className="grid gap-1 text-sm sm:grid-cols-2">
             {Object.entries(settings.data?.preferences ?? {})
               .sort(([left], [right]) => left.localeCompare(right))
               .map(([key, value]) => (
@@ -187,7 +189,7 @@ export function SettingsPage() {
 
       {settings.data?.theme ? (
         <Panel title="临时主题">
-          <pre className="overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-400">
+          <pre className="overflow-x-auto rounded bg-slate-950 p-3 text-sm text-slate-400">
             {JSON.stringify(settings.data.theme, null, 2)}
           </pre>
         </Panel>
@@ -202,9 +204,9 @@ export function SettingsPage() {
         >
           {save.isPending ? "保存中…" : "保存设置"}
         </button>
-        {notice ? <span className="text-xs text-emerald-300">{notice}</span> : null}
+        {notice ? <span className="text-sm text-emerald-300">{notice}</span> : null}
         {save.isError ? (
-          <span className="text-xs text-rose-300">
+          <span className="text-sm text-rose-300">
             {save.error instanceof Error ? save.error.message : "保存失败"}
           </span>
         ) : null}

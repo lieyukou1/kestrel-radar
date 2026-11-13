@@ -12,7 +12,7 @@ import sqlite3
 from ..config import AppConfig
 from ..llm.client import DeepSeekLLM, LLMError
 from ..store import repo
-from . import embedding
+from . import embedding, retrieval
 
 # 没有任何检索词命中时，纯语义必须足够强才算依据；
 # bge-small-zh 对无关中文短句也能给出 0.4~0.5，光看分数会误判。
@@ -24,6 +24,11 @@ MAX_CLAIMS = 6
 QA_SYSTEM = """你是基于个人知识库回答问题的助手。只能使用给出的材料回答。
 材料足够就直接回答；材料不足就明确说“知识库里没有足够依据”，不要补充材料以外的信息。
 用中文回答，不超过 300 字；引用材料时在句末标 [1][2] 这样的编号。"""
+
+UNIT_QA_SYSTEM = """你是基于个人知识库回答问题的助手。只能使用给出的材料回答。
+材料足够就直接回答；材料不足就明确说“知识库里没有足够依据”，不要补充材料以外的信息。
+用中文回答，不超过 400 字。引用材料时使用材料自带的 [C1]/[E1]/[D1]/[S1] 编号，
+不要改写编号，也不要引用没有出现在材料里的编号。"""
 
 TOOL_SYSTEM = """你是通用助手。回答简洁（不超过 250 字），不确定就直说“不确定”。
 不要编造引用或数据。"""
@@ -180,6 +185,27 @@ def supported_hits(
     return hits[:MAX_SOURCES]
 
 
+def _unit_sources(conn: sqlite3.Connection, hits: list[retrieval.RetrievalHit]) -> list[dict]:
+    sources: list[dict] = []
+    seen: set[int] = set()
+    for hit in hits:
+        if hit.document_id in seen:
+            continue
+        seen.add(hit.document_id)
+        document = repo.get_document(conn, hit.document_id)
+        if document is None:
+            continue
+        sources.append(
+            {
+                "document_id": hit.document_id,
+                "title": str(document["title"]),
+                "url": str(document["url"]),
+                "anchor": hit.anchor,
+            }
+        )
+    return sources
+
+
 def answer_question(
     conn: sqlite3.Connection,
     config: AppConfig,
@@ -187,7 +213,32 @@ def answer_question(
     *,
     keywords: list[str] | None = None,
 ) -> dict:
-    """返回 {supported, answer, sources} 或 {supported: False, related}。"""
+    """优先走单元级混合检索；没有索引时回退旧的文档级检索。"""
+    query = question
+    if keywords:
+        query = f"{question} {' '.join(str(item) for item in keywords if str(item).strip())}"
+    try:
+        hits = retrieval.search_units(conn, query, limit=8)
+    except Exception:
+        hits = []
+
+    if hits:
+        context, citations = retrieval.format_context(conn, hits)
+        llm = _llm_or_raise(config)
+        text, _ = llm.chat(
+            conn,
+            stage="qa",
+            system=UNIT_QA_SYSTEM,
+            user=f"材料：\n{context}\n\n问题：{question}",
+            max_tokens=900,
+        )
+        return {
+            "supported": True,
+            "answer": text.strip(),
+            "sources": _unit_sources(conn, hits),
+            "citations": citations,
+        }
+
     hits = supported_hits(conn, question, keywords=keywords)
     if not hits:
         return {"supported": False, "related": _closest(conn, question)}

@@ -61,6 +61,87 @@ export type Article = {
 
 export type SummaryPayload = Record<string, unknown>;
 
+export type ReadingEvidence = {
+  id: number;
+  kind: string | null;
+  quote: string | null;
+  anchor: string | null;
+  metric: string | null;
+  value: string | null;
+  unit: string | null;
+  baseline: string | null;
+  condition: string | null;
+  sample: string | null;
+};
+
+export type ReadingClaim = {
+  id: number;
+  kind: string;
+  text: string;
+  claim_type: string | null;
+  confidence: string | null;
+  quote: string | null;
+  anchor: string | null;
+  question: string | null;
+  status: string;
+  section_id: number | null;
+  evidence: ReadingEvidence[];
+};
+
+export type ReadingSection = {
+  id: number;
+  ord: number;
+  heading: string | null;
+  role: string | null;
+  summary: string | null;
+  anchor: string | null;
+};
+
+export type ReadingPayload = {
+  thesis?: string;
+  problem?: string;
+  method?: string;
+  article_type?: string;
+  audience?: string;
+  outline?: { heading: string; role: string; summary: string; anchor: string }[];
+  parts?: {
+    index: number;
+    total: number;
+    headings: string;
+    summary: string;
+    key_claims?: number[];
+    open_questions?: string[];
+  }[];
+  coverage?: { chunks_total: number; chunks_read: number; chunks_skipped?: number };
+  questions?: string[];
+  key_terms?: { term: string; definition: string }[];
+  claims?: (ReadingClaim & { local_id?: number })[];
+  main_claims?: {
+    claim_id: number;
+    local_id?: number;
+    text: string;
+    supports?: number[];
+    note?: string;
+  }[];
+  relations?: {
+    from_claim_id: number;
+    to_claim_id: number;
+    relation: string;
+    note: string;
+  }[];
+  narrative?: string;
+  critique?: {
+    unverified?: string[];
+    weak_evidence?: string[];
+    counterpoints?: string[];
+    open_questions?: string[];
+  };
+  limitations?: string[];
+  evidence?: string[];
+  l3?: string;
+  community?: Record<string, string[]>;
+};
+
 export type EventItem = Article & {
   angle: string | null;
   item_rank: number;
@@ -94,7 +175,9 @@ export type ArticleDetail = {
   document: Article;
   summary: SummaryPayload | null;
   kb: SummaryPayload | null;
-  claims: { kind: string; text: string }[];
+  reading: ReadingPayload | null;
+  sections: ReadingSection[];
+  claims: ReadingClaim[];
   notes: { content: string; created_at: string }[];
   sources: { source_id: string; name: string; kind: string }[];
   appearances: {
@@ -156,10 +239,22 @@ export type SearchResult = {
   note: string;
 };
 
+export type QACitation = {
+  label: string;
+  unit_type: string;
+  document_id: number;
+  claim_id: number | null;
+  evidence_id: number | null;
+  anchor: string;
+  quote: string;
+  score: number;
+};
+
 export type QAResult = {
   supported: boolean;
   answer?: string;
-  sources?: { document_id: number; title: string; url: string }[];
+  sources?: { document_id: number; title: string; url: string; anchor?: string }[];
+  citations?: QACitation[];
   related?: SearchHit[];
 };
 

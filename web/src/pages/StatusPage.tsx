@@ -10,6 +10,8 @@ import {
   Loading,
   Panel,
   buttonClass,
+  pageHintClass,
+  pageTitleClass,
   primaryButtonClass,
 } from "../components/ui";
 import { formatCny, formatDateTime } from "../lib/format";
@@ -41,11 +43,11 @@ function Table({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-left text-xs">
+      <table className="w-full min-w-[520px] text-left text-sm">
         <thead className="text-slate-500">
           <tr>
             {headers.map((header) => (
-              <th key={header} className="border-b border-slate-800 px-2 py-1.5 font-medium">
+              <th key={header} className="border-b border-slate-800 px-2.5 py-2 font-medium">
                 {header}
               </th>
             ))}
@@ -55,7 +57,7 @@ function Table({
           {rows.map((row, index) => (
             <tr key={index} className="border-b border-slate-900/80">
               {row.map((cell, cellIndex) => (
-                <td key={cellIndex} className="px-2 py-1.5">
+                <td key={cellIndex} className="px-2.5 py-2">
                   {cell ?? "—"}
                 </td>
               ))}
@@ -116,8 +118,8 @@ export function StatusPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">状态</h1>
-          <p className="mt-1 text-xs text-slate-500">
+          <h1 className={pageTitleClass}>状态</h1>
+          <p className={pageHintClass}>
             采集、花费与推送的最近 7 天运行状况。
           </p>
         </div>
@@ -141,34 +143,34 @@ export function StatusPage() {
         </div>
       </div>
 
-      {notice ? <div className="text-xs text-emerald-300">{notice}</div> : null}
+      {notice ? <div className="text-sm text-emerald-300">{notice}</div> : null}
       {collect.isError ? <ErrorBox error={collect.error} /> : null}
       {digest.isError ? <ErrorBox error={digest.error} /> : null}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="text-xs text-slate-500">今日推送</div>
-          <div className="mt-1 text-lg font-semibold text-slate-100">
+          <div className="text-sm text-slate-500">今日推送</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">
             {today ? `${today.count ?? 0} 条 · ${today.events_count ?? 0} 事件` : "还没有"}
           </div>
           {today ? (
             <div className="mt-2 flex items-center gap-2">
               <Badge tone={statusTone(today.status)}>{today.status}</Badge>
-              <span className="text-[11px] text-slate-500">{today.kind}</span>
+              <span className="text-sm text-slate-500">{today.kind}</span>
             </div>
           ) : null}
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="text-xs text-slate-500">今日模型花费</div>
-          <div className="mt-1 text-lg font-semibold text-slate-100">
+          <div className="text-sm text-slate-500">今日模型花费</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">
             {formatCny(data.today_llm.cost_cny)}
           </div>
-          <div className="mt-2 text-[11px] text-slate-500">
+          <div className="mt-2 text-sm text-slate-500">
             {data.today_llm.calls} 次调用
           </div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="text-xs text-slate-500">文档状态</div>
+          <div className="text-sm text-slate-500">文档状态</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {Object.entries(data.documents_by_status).map(([status, count]) => (
               <Badge key={status}>
@@ -195,7 +197,7 @@ export function StatusPage() {
       <Panel
         title={`最近 ${window.window_days} 天 · 模型`}
         extra={
-          <span className="text-[11px] text-slate-500">
+          <span className="text-sm text-slate-500">
             合计 {window.llm_calls} 次 · {formatCny(window.llm_total_cny)}
           </span>
         }

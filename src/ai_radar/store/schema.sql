@@ -199,7 +199,69 @@ CREATE TABLE IF NOT EXISTS claims (
   document_id   INTEGER NOT NULL REFERENCES documents(id),
   chunk_id      INTEGER REFERENCES chunks(id),
   kind          TEXT NOT NULL,
-  text          TEXT NOT NULL
+  text          TEXT NOT NULL,
+  section_id    INTEGER,
+  claim_type    TEXT,
+  confidence    TEXT,
+  quote         TEXT,
+  anchor        TEXT,
+  question      TEXT,
+  status        TEXT NOT NULL DEFAULT 'active',
+  retrieval_text TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sections (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id   INTEGER NOT NULL REFERENCES documents(id),
+  ord           INTEGER NOT NULL,
+  heading       TEXT,
+  role          TEXT,
+  summary       TEXT,
+  anchor        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS evidence (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  claim_id      INTEGER NOT NULL REFERENCES claims(id),
+  document_id   INTEGER NOT NULL REFERENCES documents(id),
+  kind          TEXT,
+  quote         TEXT,
+  anchor        TEXT,
+  metric        TEXT,
+  value         TEXT,
+  unit          TEXT,
+  baseline      TEXT,
+  condition     TEXT,
+  sample        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS claim_relations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_claim_id INTEGER NOT NULL REFERENCES claims(id),
+  to_claim_id   INTEGER NOT NULL REFERENCES claims(id),
+  relation      TEXT NOT NULL,
+  note          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS search_units (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id   INTEGER NOT NULL REFERENCES documents(id),
+  unit_type     TEXT NOT NULL,
+  unit_id       INTEGER NOT NULL,
+  text          TEXT NOT NULL,
+  anchor        TEXT,
+  metadata_json TEXT,
+  updated_at    TEXT NOT NULL,
+  UNIQUE(unit_type, unit_id)
+);
+
+CREATE TABLE IF NOT EXISTS unit_vectors (
+  unit_id       INTEGER NOT NULL REFERENCES search_units(id),
+  model         TEXT NOT NULL,
+  dim           INTEGER NOT NULL,
+  vector_json   TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY(unit_id, model)
 );
 
 CREATE TABLE IF NOT EXISTS relations (
@@ -227,3 +289,8 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_day ON llm_usage(day, stage);
 CREATE INDEX IF NOT EXISTS idx_topics_date ON topics(topic_date, kind);
 CREATE INDEX IF NOT EXISTS idx_topic_items_doc ON topic_items(document_id);
 CREATE INDEX IF NOT EXISTS idx_notes_doc ON notes(document_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sections_doc ON sections(document_id, ord);
+CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
+CREATE INDEX IF NOT EXISTS idx_claim_relations_from ON claim_relations(from_claim_id);
+CREATE INDEX IF NOT EXISTS idx_search_units_doc ON search_units(document_id, unit_type);
+CREATE INDEX IF NOT EXISTS idx_search_units_type ON search_units(unit_type, unit_id);

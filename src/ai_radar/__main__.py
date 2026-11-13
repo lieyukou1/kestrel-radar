@@ -49,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("favorites", help="查看收藏夹")
     sub.add_parser("prefs", help="查看偏好设置")
     sub.add_parser("backfill-vectors", help="为已精读文章补算语义向量")
+    reindex = sub.add_parser("reindex", help="重建知识库检索单元（章节/主张/证据）")
+    reindex.add_argument("--limit", type=int, default=None, help="最多重建多少篇")
     serve = sub.add_parser("serve", help="启动常驻服务（定时采集与推送）")
     serve.add_argument(
         "--channel",
@@ -157,6 +159,16 @@ def main(argv: list[str] | None = None) -> int:
         from .pipeline.embedding import backfill_vectors
 
         print(json.dumps(backfill_vectors(conn), ensure_ascii=False))
+        return 0
+
+    if args.command == "reindex":
+        from .pipeline.retrieval import reindex_all
+
+        print(
+            json.dumps(
+                reindex_all(conn, limit=args.limit), ensure_ascii=False, indent=2
+            )
+        )
         return 0
 
     if args.command == "collect":

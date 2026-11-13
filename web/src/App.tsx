@@ -52,11 +52,11 @@ function Layout() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 sm:px-4 sm:py-3">
           <Link to="/" className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-[0_0_12px_2px_rgba(34,211,238,0.7)]" />
-            <span className="text-sm font-semibold tracking-wide text-slate-100">
+            <span className="text-lg font-semibold tracking-wide text-slate-100">
               Kestrel Radar
             </span>
           </Link>
-          <nav className="radar-scroll flex flex-1 items-center gap-1 overflow-x-auto text-sm">
+          <nav className="radar-scroll flex flex-1 items-center gap-1 overflow-x-auto text-base">
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -74,13 +74,13 @@ function Layout() {
               </NavLink>
             ))}
           </nav>
-          <label className="flex items-center gap-2 text-xs text-slate-500">
+          <label className="flex items-center gap-2 text-sm text-slate-500">
             领域
             <select
               aria-label="切换领域"
               value={domain}
               onChange={(event) => changeDomain(event.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none focus:border-cyan-500"
+              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none focus:border-cyan-500"
             >
               {list.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -97,7 +97,7 @@ function Layout() {
       <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
         <Outlet context={{ domain, domains: list } satisfies AppContext} />
       </main>
-      <footer className="mx-auto max-w-6xl px-3 pb-6 text-xs text-slate-600 sm:px-4 sm:pb-8">
+      <footer className="mx-auto max-w-6xl px-3 pb-6 text-sm text-slate-600 sm:px-4 sm:pb-8">
         本地服务 · 数据不出本机
       </footer>
     </div>

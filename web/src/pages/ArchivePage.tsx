@@ -9,12 +9,15 @@ import {
   Empty,
   ErrorBox,
   Loading,
+  Pagination,
   buttonClass,
   inputClass,
+  pageHintClass,
+  pageTitleClass,
   primaryButtonClass,
 } from "../components/ui";
 
-const PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 20;
 
 export function ArchivePage() {
   const { domain } = useAppContext();
@@ -25,6 +28,7 @@ export function ArchivePage() {
   const [kind, setKind] = useState("");
   const [saved, setSaved] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const domainInfo = useQuery({
     queryKey: ["domain", domain],
@@ -32,15 +36,15 @@ export function ArchivePage() {
   });
 
   const archive = useQuery({
-    queryKey: ["archive", domain, q, tag, kind, saved, page],
+    queryKey: ["archive", domain, q, tag, kind, saved, page, pageSize],
     queryFn: () =>
       api.archive(domain, {
         q,
         tag,
         kind,
         saved: saved || undefined,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
+        limit: pageSize,
+        offset: page * pageSize,
       }),
     placeholderData: keepPreviousData,
   });
@@ -55,13 +59,12 @@ export function ArchivePage() {
   }, [domain]);
 
   const total = archive.data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">归档</h1>
-        <p className="mt-1 text-xs text-slate-500">
+        <h1 className={pageTitleClass}>归档</h1>
+        <p className={pageHintClass}>
           全时间范围检索已入库内容，不走新鲜度打分。
         </p>
       </div>
@@ -112,7 +115,7 @@ export function ArchivePage() {
           <option value="forum">讨论</option>
           <option value="repo">仓库</option>
         </select>
-        <label className="flex items-center gap-1.5 text-xs text-slate-400">
+        <label className="flex items-center gap-1.5 text-sm text-slate-400">
           <input
             type="checkbox"
             checked={saved}
@@ -146,10 +149,6 @@ export function ArchivePage() {
         <ErrorBox error={archive.error} onRetry={() => void archive.refetch()} />
       ) : null}
 
-      <div className="text-xs text-slate-500">
-        共 {total} 条 · 第 {page + 1}/{pages} 页
-      </div>
-
       <div className="space-y-2">
         {(archive.data?.items ?? []).map((item) => (
           <ArticleRow
@@ -165,24 +164,16 @@ export function ArchivePage() {
         <Empty>没有匹配的内容。</Empty>
       ) : null}
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={page === 0}
-          onClick={() => setPage((value) => Math.max(0, value - 1))}
-        >
-          上一页
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={page + 1 >= pages}
-          onClick={() => setPage((value) => value + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      <Pagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPage(0);
+          setPageSize(size);
+        }}
+      />
     </div>
   );
 }

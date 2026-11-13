@@ -45,6 +45,52 @@ def get_article(document_id: int, ctx: Ctx) -> dict:
         raise HTTPException(status_code=404, detail="文章不存在")
 
     kb = repo.get_kb_article(ctx.conn, document_id)
+    reading = None
+    if kb is not None:
+        reading = load_json(kb["reading_json"], None) or load_json(kb["card_json"], None)
+    sections = [
+        {
+            "id": int(item["id"]),
+            "ord": int(item["ord"]),
+            "heading": item["heading"],
+            "role": item["role"],
+            "summary": item["summary"],
+            "anchor": item["anchor"],
+        }
+        for item in repo.list_sections(ctx.conn, document_id)
+    ]
+    evidence_by_claim: dict[int, list[dict]] = {}
+    for item in repo.list_evidence(ctx.conn, document_id):
+        evidence_by_claim.setdefault(int(item["claim_id"]), []).append(
+            {
+                "id": int(item["id"]),
+                "kind": item["kind"],
+                "quote": item["quote"],
+                "anchor": item["anchor"],
+                "metric": item["metric"],
+                "value": item["value"],
+                "unit": item["unit"],
+                "baseline": item["baseline"],
+                "condition": item["condition"],
+                "sample": item["sample"],
+            }
+        )
+    claims = [
+        {
+            "id": int(item["id"]),
+            "kind": item["kind"],
+            "text": item["text"],
+            "claim_type": item["claim_type"],
+            "confidence": item["confidence"],
+            "quote": item["quote"],
+            "anchor": item["anchor"],
+            "question": item["question"],
+            "status": item["status"],
+            "section_id": item["section_id"],
+            "evidence": evidence_by_claim.get(int(item["id"]), []),
+        }
+        for item in repo.list_claims(ctx.conn, document_id)
+    ]
     sources = [
         {"source_id": item["source_id"], "name": item["name"], "kind": item["kind"]}
         for item in ctx.conn.execute(
@@ -84,10 +130,9 @@ def get_article(document_id: int, ctx: Ctx) -> dict:
         "document": document_dict(row),
         "summary": repo.find_latest_summary(ctx.conn, document_id),
         "kb": load_json(kb["card_json"], {}) if kb is not None else None,
-        "claims": [
-            {"kind": item["kind"], "text": item["text"]}
-            for item in repo.list_claims(ctx.conn, document_id)
-        ],
+        "reading": reading,
+        "sections": sections,
+        "claims": claims,
         "notes": [
             {"content": item["content"], "created_at": item["created_at"]}
             for item in repo.list_notes(ctx.conn, document_id)

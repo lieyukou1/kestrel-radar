@@ -75,6 +75,175 @@ REDUCE_TEMPLATE = """标题：{title}
   "l3": "面向工程师的深度讲解，400-700 字：为什么这样做、关键设计取舍、怎么验证、能迁移到什么场景"
 }}"""
 
+READING_MAP_TEMPLATE = """标题：{title}
+类型：{kind}
+原文：{url}
+
+已知章节标题：
+{headings}
+
+开头片段：
+<untrusted_content>
+{head}
+</untrusted_content>
+
+结尾片段：
+<untrusted_content>
+{tail}
+</untrusted_content>
+
+请先做一次预读，输出 JSON：
+{{
+  "thesis": "作者的核心主张（一句可反驳的话，不是主题复述）",
+  "problem": "这篇文章要解决的核心问题",
+  "article_type": "论文/工程博客/产品公告/评论/其他",
+  "audience": "作者预设的读者",
+  "method_summary": "方法或论证路径的 2-3 句概括",
+  "outline": [
+    {{"heading": "章节标题", "role": "intro|related|method|experiment|discussion|conclusion|other", "summary": "这一节在论证链里做什么"}}
+  ],
+  "questions": ["这篇文章能回答的 5-8 个具体问题"],
+  "key_terms": [{{"term": "术语", "definition": "作者在使用它时的含义"}}]
+}}"""
+
+SECTION_TEMPLATE = """标题：{title}
+全文主张：{thesis}
+文章结构：
+{outline}
+
+当前章节：{section}
+章节角色：{role}
+片段 {ord}/{total}：
+<untrusted_content>
+{content}
+</untrusted_content>
+
+请只根据这个片段，输出 JSON：
+{{
+  "section_summary": "这一节在全文论证里的作用（1-2 句）",
+  "claims": [
+    {{
+      "text": "作者的主张（一句可独立理解的话）",
+      "question": "这条主张回答的问题",
+      "claim_type": "main|sub|assumption|counter|limitation|fact",
+      "confidence": "author|source|inference|unverified",
+      "quote": "支撑这条主张的原文关键句（逐字摘录；没有就填空字符串）",
+      "evidence": [
+        {{
+          "kind": "data|experiment|citation|example|reasoning",
+          "quote": "原文证据",
+          "metric": "指标名",
+          "value": "数值",
+          "unit": "单位",
+          "baseline": "比较基准",
+          "condition": "成立条件",
+          "sample": "样本或数据范围"
+        }}
+      ]
+    }}
+  ],
+  "limitations": ["这一节暴露的局限或未验证之处"],
+  "open_questions": ["读到这里仍然没有回答的问题"]
+}}
+
+规则：
+- 每个片段最多 6 条 claim；没有新主张的过渡段可以返回空数组。
+- 同一件事不要拆成多条；只保留能进入论证链的主张，忽略铺垫、重复和纯背景。
+- text 写成可独立理解的判断，不要照抄原文长句。"""
+
+ARGUMENT_TEMPLATE = """标题：{title}
+全文主张：{thesis}
+
+全文脉络（按阅读顺序，每个部分带其关键主张 id）：
+<untrusted_content>
+{parts}
+</untrusted_content>
+
+下面是分节抽取出的主张（每条带 local_id 和证据）：
+<untrusted_content>
+{claims}
+</untrusted_content>
+
+请做论证重建，输出 JSON：
+{{
+  "thesis": "修正后的全文核心主张（一句）",
+  "main_claims": [
+    {{
+      "claim_id": 1,
+      "text": "主主张",
+      "supports": [2, 3],
+      "note": "为什么这些子主张能支撑它"
+    }}
+  ],
+  "relations": [
+    {{"from": 2, "to": 1, "relation": "supports|refutes|qualifies|depends_on|contrasts", "note": "一句话说明"}}
+  ]
+}}
+
+规则：
+- 主主张只能有 3-5 条；其余归到子主张。
+- 主主张必须覆盖全文脉络，不能只解释开头部分。
+- 每条主主张的 supports 最多 6 个 id；relations 最多 12 条；每条 note 不超过 40 字。
+- 不要复述所有子主张，只输出能解释全文结构的主主张和关键关系。
+- 每条 relation 必须使用给定枚举值。
+- 不要为了凑数建立关系；没有关系就留空数组。
+- 只输出上面列出的字段，不要增加 contradictions / unverified 等额外字段。"""
+
+PART_TEMPLATE = """标题：{title}
+全文主张：{thesis}
+文章结构：
+{outline}
+
+第 {index}/{total} 部分，覆盖章节：{headings}
+
+这一部分的主张：
+<untrusted_content>
+{claims}
+</untrusted_content>
+
+请为这一部分做小结，输出 JSON：
+{{
+  "summary": "这一部分在全文论证中做了什么（3-5 句，写清它和全文主张的关系、转折或证据）",
+  "key_claims": [1, 2, 3],
+  "open_questions": ["这一部分没有回答的问题"]
+}}
+
+规则：
+- key_claims 选 3-6 条最能代表本部分论证的 local_id。
+- summary 不要罗列主张，写成因果、转折和证据关系。
+- 只输出 JSON，不要额外解释。"""
+
+NARRATIVE_TEMPLATE = """标题：{title}
+全文主张：{thesis}
+
+论证材料（material.parts 是按顺序覆盖全文的脉络）：
+<untrusted_content>
+{material}
+</untrusted_content>
+
+请写一段 1200-2000 字的中文精读叙事，要求：
+1. 结构：问题 → 为什么难 → 已有做法及不足 → 作者洞察 → 方法 → 证据 → 边界 → 对读者的意义。
+2. 用连续段落写作，不要用项目符号，不要写成字段罗列。
+3. 每个关键判断后面用 [C1] 这样的编号标注对应 claim。
+4. 只能使用材料中的信息；材料没有的数字、结论、引用不要补。
+5. 如果某条主张没有证据，在叙事里明确写「原文未提供证据」。
+6. 按 material.parts 的顺序覆盖从开头到结尾的完整论证弧，不能只写前几节。"""
+
+CRITIQUE_TEMPLATE = """标题：{title}
+
+叙事与主张：
+<untrusted_content>
+{material}
+</untrusted_content>
+
+请做证据审计，输出 JSON：
+{{
+  "unverified": ["没有证据支撑的主张"],
+  "weak_evidence": ["数据缺少 baseline/条件/样本，或只有一个案例却下普遍结论的地方"],
+  "counterpoints": ["作者没有讨论但值得考虑的反例、替代解释或风险"],
+  "open_questions": ["这篇文章之后仍值得继续查的问题"]
+}}"""
+
 THEME_TEMPLATE = """以下几条内容被判定为同一话题：
 {titles}{history}"""
 
@@ -161,6 +330,70 @@ def deep_read_system(profile: DomainProfile | None = None) -> str:
         "用户会给你一篇文章的一个片段，请只根据该片段抽取结构化信息。\n"
         "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。\n"
         '所有字段使用中文；片段中没有的信息填 "未知" 或空数组。严禁编造数据、引用或结论。'
+    )
+
+
+def reading_map_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会给你一篇文章的标题、章节和开头/结尾。请先做预读，建立全文的论证骨架，"
+        "不要急着总结细节。\n"
+        "thesis 必须是作者的核心主张，不是主题复述；outline 的 role 必须从给定枚举里选。\n"
+        "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。所有内容使用中文。"
+    )
+
+
+def section_read_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会给你一篇文章的某个片段、全文主张和章节角色。请做分节取证：\n"
+        "1. 每条 claim 必须是作者的主张，能独立理解，不能只是复述句子；\n"
+        "2. 每条 claim 必须配 question（它回答的问题）和 quote（原文关键句，逐字摘录）；\n"
+        "3. 原文没有证据时，evidence 留空，不要把常识或推断写成原文证据；\n"
+        "4. confidence 区分作者原意 / 原文事实 / 合理推断 / 无法确认；\n"
+        "5. 不要把案例当普遍结论，不要把相关写成因果。\n"
+        "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。所有内容使用中文。"
+    )
+
+
+def argument_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会给你一篇文章分节抽取出的主张和证据。请重建全文论证，不要只做合并去重：\n"
+        "- 找出 3-5 条主主张，其余作为子主张；\n"
+        "- 为子主张与主主张、主张与主张之间建立 supports/refutes/qualifies/depends_on/contrasts 关系；\n"
+        "- 只输出主主张和关键关系，输出要短；矛盾与无证据判断由后续审计阶段处理。\n"
+        "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。所有内容使用中文。"
+    )
+
+
+def part_summary_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会把长文按顺序切成若干部分，并给出这一部分的主张。"
+        "请写一个能承接上下文的段落小结：它在全文论证里做了什么、和全文主张是什么关系、"
+        "这一部分内部有没有转折或矛盾。不要逐条罗列主张。\n"
+        "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。所有内容使用中文。"
+    )
+
+
+def narrative_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会给你一篇文章的主张、证据和关系。请写一段连续的叙事，"
+        "让读者能顺着问题、方法、证据和边界理解这篇文章。\n"
+        "不要用项目符号，不要把字段罗列成段落。每个关键判断用 [C1] 标注对应主张。"
+        "只能使用材料中的信息，不要补造数字、引用或结论。"
+    )
+
+
+def critique_system(profile: DomainProfile | None = None) -> str:
+    return (
+        f"你是{_prompt(profile, 'deep_read_persona')}。"
+        "用户会给你一篇文章的叙事和主张。请做证据审计：找出没有证据的判断、"
+        "缺少 baseline/条件/样本的数据、把相关当因果或把案例当普遍的地方、"
+        "作者没有讨论的反例和未验证假设。\n"
+        "只输出一个 JSON 对象，不要输出 Markdown、解释或代码块。所有内容使用中文。"
     )
 
 
@@ -282,6 +515,52 @@ def render_reduce_prompt(**kwargs: str) -> str:
     return template.format(
         **{k: v for k, v in kwargs.items() if k != "chunk_cards"}
     ).replace("\x00CARDS\x00", kwargs["chunk_cards"])
+
+
+def render_reading_map_prompt(**kwargs: str) -> str:
+    template = READING_MAP_TEMPLATE
+    for key, marker in (("head", "\x00HEAD\x00"), ("tail", "\x00TAIL\x00")):
+        template = template.replace("{" + key + "}", marker)
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k not in ("head", "tail")}
+    ).replace("\x00HEAD\x00", kwargs["head"]).replace(
+        "\x00TAIL\x00", kwargs["tail"]
+    )
+
+
+def render_section_prompt(**kwargs: str) -> str:
+    template = SECTION_TEMPLATE.replace("{content}", "\x00CONTENT\x00")
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k != "content"}
+    ).replace("\x00CONTENT\x00", kwargs["content"])
+
+
+def render_part_prompt(**kwargs: str) -> str:
+    template = PART_TEMPLATE.replace("{claims}", "\x00CLAIMS\x00")
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k != "claims"}
+    ).replace("\x00CLAIMS\x00", kwargs["claims"])
+
+
+def render_argument_prompt(**kwargs: str) -> str:
+    template = ARGUMENT_TEMPLATE.replace("{claims}", "\x00CLAIMS\x00")
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k != "claims"}
+    ).replace("\x00CLAIMS\x00", kwargs["claims"])
+
+
+def render_narrative_prompt(**kwargs: str) -> str:
+    template = NARRATIVE_TEMPLATE.replace("{material}", "\x00MATERIAL\x00")
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k != "material"}
+    ).replace("\x00MATERIAL\x00", kwargs["material"])
+
+
+def render_critique_prompt(**kwargs: str) -> str:
+    template = CRITIQUE_TEMPLATE.replace("{material}", "\x00MATERIAL\x00")
+    return template.format(
+        **{k: v for k, v in kwargs.items() if k != "material"}
+    ).replace("\x00MATERIAL\x00", kwargs["material"])
 
 
 def render_community_prompt(**kwargs: str) -> str:

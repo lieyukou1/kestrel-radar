@@ -30,12 +30,12 @@ export function ArticleRow({
         <div className="min-w-0">
           <button
             type="button"
-            className="text-left text-sm font-medium text-slate-100 hover:text-cyan-300"
+            className="text-left text-base font-medium leading-7 text-slate-100 hover:text-cyan-300"
             onClick={() => onOpen?.(article.id)}
           >
             {article.title}
           </button>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             {article.tag ? <Badge tone="cyan">{article.tag}</Badge> : null}
             <span>{article.kind}</span>
             <span>{formatDate(article.published_at)}</span>
@@ -75,9 +75,9 @@ export function ArticleRow({
         </div>
       </div>
       {why ? (
-        <p className="mt-2 text-xs leading-5 text-slate-400">{why}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-400">{why}</p>
       ) : showAbstract && article.abstract ? (
-        <p className="mt-2 text-xs leading-5 text-slate-400">
+        <p className="mt-2 text-sm leading-6 text-slate-400">
           {truncate(article.abstract, 180)}
         </p>
       ) : null}

@@ -218,6 +218,73 @@ def test_article_detail_and_actions(client, root: Path) -> None:
     assert client.get("/api/v1/articles/99999").status_code == 404
 
 
+def test_article_detail_returns_reading_structure(client, root: Path) -> None:
+    seed = _seed(root)
+    document_id = seed["document_id"]
+    conn = connect(root / "data" / "domains" / "ai" / "ai_radar.db")
+    repo.save_reading(
+        conn,
+        document_id=document_id,
+        reading={
+            "thesis": "Carbon 用更低成本达到第一梯队",
+            "problem": "成本太高",
+            "narrative": "Carbon 在 CursorBench 上排名第一 [C1]。",
+            "questions": ["CursorBench 表现如何？"],
+            "outline": [],
+            "claims": [],
+            "main_claims": [],
+            "relations": [],
+            "critique": {"weak_evidence": ["缺少独立复现"]},
+        },
+        problem="成本太高",
+        method="分阶段开放",
+        evidence=["CursorBench 53.9%"],
+        conclusions=["Carbon 排名第一"],
+        limitations=["缺少独立复现"],
+    )
+    section_ids = repo.replace_sections(
+        conn,
+        document_id,
+        [{"ord": 1, "heading": "评测", "role": "experiment", "summary": "三项第一"}],
+    )
+    claim_ids = repo.replace_claims(
+        conn,
+        document_id,
+        [
+            {
+                "section_id": section_ids[0],
+                "text": "Carbon 在 CursorBench 上排名第一",
+                "question": "CursorBench 表现如何？",
+                "claim_type": "main",
+                "confidence": "source",
+                "quote": "CursorBench 4.0: Carbon 53.9%",
+                "anchor": "评测 · 片段 1",
+            }
+        ],
+    )
+    repo.insert_evidence(
+        conn,
+        document_id=document_id,
+        claim_id=claim_ids[0],
+        items=[
+            {
+                "kind": "data",
+                "quote": "CursorBench 4.0: Carbon 53.9%",
+                "metric": "CursorBench",
+                "value": "53.9",
+                "unit": "%",
+            }
+        ],
+    )
+    conn.close()
+
+    payload = client.get(f"/api/v1/articles/{document_id}").json()
+    assert payload["reading"]["thesis"] == "Carbon 用更低成本达到第一梯队"
+    assert payload["sections"][0]["heading"] == "评测"
+    assert payload["claims"][0]["question"] == "CursorBench 表现如何？"
+    assert payload["claims"][0]["evidence"][0]["value"] == "53.9"
+
+
 def test_archive_query(client, root: Path) -> None:
     seed = _seed(root)
 

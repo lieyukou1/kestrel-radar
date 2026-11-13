@@ -9,12 +9,14 @@ import {
   Empty,
   ErrorBox,
   Loading,
-  buttonClass,
+  Pagination,
   inputClass,
+  pageHintClass,
+  pageTitleClass,
 } from "../components/ui";
 import { formatDateTime } from "../lib/format";
 
-const PAGE_SIZE = 12;
+const DEFAULT_PAGE_SIZE = 20;
 
 export function LibraryPage() {
   const { domain } = useAppContext();
@@ -23,13 +25,14 @@ export function LibraryPage() {
   const [kind, setKind] = useState("");
   const [onlySaved, setOnlySaved] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const kb = useQuery({
-    queryKey: ["kb", domain, dimension, kind, onlySaved, page],
+    queryKey: ["kb", domain, dimension, kind, onlySaved, page, pageSize],
     queryFn: () =>
       api.kb(domain, {
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
+        limit: pageSize,
+        offset: page * pageSize,
         dimension,
         kind,
         saved: onlySaved || undefined,
@@ -46,13 +49,12 @@ export function LibraryPage() {
 
   const counts = kb.data?.counts;
   const total = counts?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">知识库</h1>
-        <p className="mt-1 text-xs text-slate-500">
+        <h1 className={pageTitleClass}>知识库</h1>
+        <p className={pageHintClass}>
           已精读与已收藏的内容，点开看完整知识卡片。
         </p>
       </div>
@@ -67,8 +69,8 @@ export function LibraryPage() {
             key={item.label}
             className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
           >
-            <div className="text-xs text-slate-500">{item.label}</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-100">
+            <div className="text-sm text-slate-500">{item.label}</div>
+            <div className="mt-1 text-3xl font-semibold text-slate-100">
               {item.value}
             </div>
             <Badge tone={item.tone}>{item.label}</Badge>
@@ -109,7 +111,7 @@ export function LibraryPage() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-xs text-slate-400">
+        <label className="flex items-center gap-1.5 text-sm text-slate-400">
           <input
             type="checkbox"
             checked={onlySaved}
@@ -130,15 +132,17 @@ export function LibraryPage() {
           <button
             key={item.id}
             type="button"
-            className="block w-full rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-left transition hover:border-cyan-500/40"
+            className="block w-full rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-left transition hover:border-cyan-500/40"
             onClick={() => navigate(`/articles/${item.id}`)}
           >
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-100">{item.title}</span>
+              <span className="text-base font-medium leading-7 text-slate-100">
+                {item.title}
+              </span>
               {item.deep_read ? <Badge tone="cyan">精读</Badge> : null}
               {item.saved_at ? <Badge tone="amber">收藏</Badge> : null}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
               {item.tag ? <span>{item.tag}</span> : null}
               <span>{item.kind}</span>
               <span>
@@ -155,24 +159,16 @@ export function LibraryPage() {
         <Empty>知识库还是空的。去日报里收藏或点「精读」。</Empty>
       ) : null}
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={page === 0}
-          onClick={() => setPage((value) => Math.max(0, value - 1))}
-        >
-          上一页
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={page + 1 >= pages}
-          onClick={() => setPage((value) => value + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      <Pagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPage(0);
+          setPageSize(size);
+        }}
+      />
     </div>
   );
 }

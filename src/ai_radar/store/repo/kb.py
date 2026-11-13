@@ -49,6 +49,14 @@ def replace_chunks(
     conn: sqlite3.Connection, document_id: int, chunks: list[dict]
 ) -> list[int]:
     """重建某篇文章的切块，返回与入参顺序一致的 chunk id。"""
+    # 重读时必须先清掉引用 claims 的证据与关系，否则外键约束会拦住删除。
+    conn.execute("DELETE FROM evidence WHERE document_id = ?", (document_id,))
+    conn.execute(
+        "DELETE FROM claim_relations WHERE from_claim_id IN "
+        "(SELECT id FROM claims WHERE document_id = ?) "
+        "OR to_claim_id IN (SELECT id FROM claims WHERE document_id = ?)",
+        (document_id, document_id),
+    )
     conn.execute("DELETE FROM claims WHERE document_id = ?", (document_id,))
     conn.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
     ids: list[int] = []

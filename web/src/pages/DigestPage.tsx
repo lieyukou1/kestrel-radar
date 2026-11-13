@@ -5,7 +5,15 @@ import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../App";
 import { api, exportDigestUrl, type ArticleAction } from "../api/client";
 import { EventCard } from "../components/EventCard";
-import { Badge, Empty, ErrorBox, Loading, buttonClass } from "../components/ui";
+import {
+  Badge,
+  Empty,
+  ErrorBox,
+  Loading,
+  buttonClass,
+  pageHintClass,
+  pageTitleClass,
+} from "../components/ui";
 
 export function DigestPage() {
   const { domain } = useAppContext();
@@ -18,6 +26,8 @@ export function DigestPage() {
   const digests = useQuery({
     queryKey: ["digests", domain],
     queryFn: () => api.digests(domain, 60),
+    // 日报在后台生成；轮询列表，新一期完成后页面自动切到最新日期。
+    refetchInterval: 60_000,
   });
   const options = (digests.data ?? []).filter((item) => item.kind === kind);
   const active = date || options[0]?.date || "";
@@ -56,18 +66,18 @@ export function DigestPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">日报</h1>
-          <p className="mt-1 text-xs text-slate-500">
-            一级看事件，点开看文章；主线事件置顶。
+          <h1 className={pageTitleClass}>日报</h1>
+          <p className={pageHintClass}>
+            一级看事件，点开看文章；主线事件置顶。新日报生成后会自动出现。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-md border border-slate-700 p-0.5 text-xs">
+          <div className="inline-flex rounded-md border border-slate-700 p-0.5 text-sm">
             {(["daily", "weekly"] as const).map((item) => (
               <button
                 key={item}
                 type="button"
-                className={`rounded px-2 py-1 ${
+                className={`rounded px-2.5 py-1.5 ${
                   kind === item ? "bg-cyan-500 text-slate-950" : "text-slate-400"
                 }`}
                 onClick={() => setKind(item)}
@@ -80,7 +90,7 @@ export function DigestPage() {
             aria-label="选择日期"
             value={active}
             onChange={(event) => setDate(event.target.value)}
-            className="max-w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500"
+            className="max-w-full rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-200 outline-none focus:border-cyan-500"
           >
             {options.length === 0 ? <option value="">暂无记录</option> : null}
             {options.map((item) => (
@@ -92,7 +102,10 @@ export function DigestPage() {
           <button
             type="button"
             className={buttonClass}
-            onClick={() => void detail.refetch()}
+            onClick={() => {
+              void digests.refetch();
+              void detail.refetch();
+            }}
             disabled={!active || detail.isFetching}
           >
             {detail.isFetching ? "刷新中…" : "刷新"}
@@ -123,7 +136,7 @@ export function DigestPage() {
       ) : null}
 
       {digest ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
           <Badge tone={digest.status === "sent" ? "emerald" : "amber"}>
             {digest.status}
           </Badge>
@@ -158,7 +171,7 @@ export function DigestPage() {
 
       {detail.data && detail.data.briefs.length > 0 ? (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-slate-200">周报分组</h2>
+          <h2 className="text-base font-semibold text-slate-200">周报分组</h2>
           {detail.data.briefs.map((item) => (
             <button
               key={`${item.section}-${item.id}`}
@@ -166,8 +179,8 @@ export function DigestPage() {
               className="block w-full rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-left hover:border-cyan-500/40"
               onClick={() => navigate(`/articles/${item.id}`)}
             >
-              <span className="text-sm text-slate-200">{item.title}</span>
-              <span className="ml-2 text-[11px] text-slate-500">
+              <span className="text-base text-slate-200">{item.title}</span>
+              <span className="ml-2 text-sm text-slate-500">
                 {item.section === "weekly_paper" ? "论文" : "仓库"}
               </span>
             </button>
