@@ -336,6 +336,58 @@ def test_deep_read_skips_broken_section_json(tmp_path: Path, monkeypatch) -> Non
     assert repo.get_kb_article(conn, document_id) is not None
 
 
+def test_deep_read_splits_broken_section(tmp_path: Path, monkeypatch) -> None:
+    """整块 JSON 坏掉时拆成两半重读，不算跳过。"""
+    config = make_config(tmp_path)
+    conn = connect(config.db_path)
+    init_db(conn)
+    document_id = seed_document(conn)
+
+    monkeypatch.setattr(
+        deep_read_mod,
+        "fetch_html",
+        lambda url, proxy, timeout=60.0: ("<html><body>x</body></html>", url),
+    )
+    long_text = "甲" * 2000 + "\n" + "乙" * 2000
+    monkeypatch.setattr(
+        deep_read_mod,
+        "chunk_markdown",
+        lambda text, max_chars=6000: [
+            {"section": "Intro", "ord": 1, "text": long_text, "anchor": None}
+        ],
+    )
+
+    def fake_chat(self, conn, *, stage, system, user, max_tokens=800, document_id=None):
+        if "请先做一次预读" in user:
+            return (
+                '{"thesis": "t", "problem": "p", "method_summary": "m", '
+                '"outline": [], "questions": []}',
+                Usage(1, 1, 0.0),
+            )
+        if "请做论证重建" in user:
+            return ('{"thesis": "t", "main_claims": [], "relations": []}', Usage(1, 1, 0.0))
+        if "请写一段 1200-2000 字" in user:
+            return "叙事", Usage(1, 1, 0.0)
+        if "请做证据审计" in user:
+            return ('{"unverified": [], "weak_evidence": []}', Usage(1, 1, 0.0))
+        if "请为这一部分做小结" in user:
+            return ('{"summary": "s", "key_claims": [1]}', Usage(1, 1, 0.0))
+        if len(user) > 3500:
+            return ('{"section_summary": "坏掉的 JSON', Usage(1, 1, 0.0))
+        return (
+            '{"section_summary": "s", "claims": [{"text": "claim", "claim_type": "sub", '
+            '"confidence": "source", "quote": "q", "evidence": []}], '
+            '"limitations": [], "open_questions": []}',
+            Usage(1, 1, 0.0),
+        )
+
+    monkeypatch.setattr(deep_read_mod.DeepSeekLLM, "chat", fake_chat)
+
+    result = deep_read_document(conn, config, repo.get_document(conn, document_id))
+    assert result.claims == 2
+    assert result.card["coverage"]["chunks_skipped"] == 0
+
+
 def test_arxiv_pdf_url() -> None:
     from ai_radar.pipeline.cleaning import arxiv_pdf_url
 

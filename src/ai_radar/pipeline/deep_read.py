@@ -275,6 +275,8 @@ def _section_card(
     chunk: dict,
     total: int,
     reading: dict,
+    *,
+    depth: int = 0,
 ) -> dict:
     role = "other"
     for item in reading.get("outline") or []:
@@ -303,7 +305,43 @@ def _section_card(
             document_id=int(document["id"]),
         )
     except LLMError as exc:
-        # 单个分块格式坏掉不该让整篇长文重来，记录后跳过这一块。
+        # 整块输出坏了先对半拆开再读一次；还不行才认定这一块失败。
+        halves = _split_chunk_text(str(chunk["text"]), depth=depth)
+        if len(halves) > 1:
+            print(
+                f"[deep_read] section split: {chunk['section']} "
+                f"ord={chunk['ord']}: {exc}",
+                flush=True,
+            )
+            merged = {
+                "section_summary": "",
+                "claims": [],
+                "limitations": [],
+                "open_questions": [],
+                "_failed": False,
+            }
+            for half in halves:
+                card = _section_card(
+                    llm,
+                    conn,
+                    document,
+                    {**chunk, "text": half},
+                    total,
+                    reading,
+                    depth=depth + 1,
+                )
+                if card.get("_failed"):
+                    merged["_failed"] = True
+                    continue
+                merged["section_summary"] = (
+                    merged["section_summary"] or str(card.get("section_summary") or "")
+                )
+                merged["claims"].extend(card.get("claims") or [])
+                merged["limitations"].extend(_as_list(card.get("limitations")))
+                merged["open_questions"].extend(_as_list(card.get("open_questions")))
+            merged["limitations"] = list(dict.fromkeys(merged["limitations"]))
+            merged["open_questions"] = list(dict.fromkeys(merged["open_questions"]))
+            return merged
         print(
             f"[deep_read] section skipped: {chunk['section']} "
             f"ord={chunk['ord']}: {exc}",
@@ -316,6 +354,18 @@ def _section_card(
             "open_questions": [],
             "_failed": True,
         }
+
+
+def _split_chunk_text(text: str, *, depth: int) -> list[str]:
+    """输出坏掉时把分块对半拆；只在第一层拆，避免无限递归。"""
+    if depth >= 1 or len(text) < 1600:
+        return [text]
+    mid = len(text) // 2
+    cut = text.rfind("\n", 0, mid)
+    if cut < len(text) // 4:
+        cut = mid
+    halves = [text[:cut].strip(), text[cut:].strip()]
+    return [part for part in halves if part]
 
 
 def _argument_map(
