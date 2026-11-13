@@ -37,10 +37,6 @@ dependencies = [
     "uvicorn>=0.30",
 ]
 
-[[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
-
 [project.scripts]
 ai-radar = "ai_radar.__main__:main"
 kestrel = "ai_radar.__main__:main"

@@ -226,6 +226,7 @@ uv run ai-radar --domain finance digest --channel fake --preview
 git clone https://github.com/lieyukou1/kestrel-radar.git
 cd kestrel-radar
 uv sync
+# 国内网络可切镜像：UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync
 
 cd web && npm install && npm run build && cd ..
 # 构建产物在 web/dist，api 启动时自动托管
